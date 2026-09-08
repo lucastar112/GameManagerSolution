@@ -38,22 +38,20 @@ namespace gameManager.src.Dolphin
             int size,
             ref int bytesWritten);
 
-        public DolphinConnection()
+        public DolphinConnection(Process process)
         {
-            Connect();
+            Connect(process);
         }
 
-        private void Connect()
+        private void Connect(Process process)
         {
-            // Connect to the Dolphin process by name (needs to be changed)
-            Process[] processes = Process.GetProcessesByName("dolphin");
-
-            if (processes.Length == 0)
+            if (process is null)
             {
                 throw new InvalidOperationException("Dolphin is not running.");
             }
-
-            _process = processes[0];
+            
+            // Connect to the Dolphin process by name
+            _process = process;
 
             Console.WriteLine($"Dolphin process found: {_process.ProcessName} " + $"(PID {_process.Id})");
 

@@ -8,9 +8,9 @@ namespace gameManager.src
     {
         private readonly DolphinConnection _dolphin;
 
-        public GameManager()
+        public GameManager(Process process)
         {
-            _dolphin = new DolphinConnection();
+            _dolphin = new DolphinConnection(process);
         }
 
         public void Run()
@@ -59,10 +59,9 @@ namespace gameManager.src
                 // Launch Dolphin with the game
                 DolphinLauncher dolphinLauncher = new();
                 Process dolphinProcess = dolphinLauncher.Start(arguments.DolphinPath, arguments.GamePath);
-                // DolphinConnection dolphin = new(dolphinProcess);
 
                 // Start gameManager
-                GameManager gameManager = new();
+                GameManager gameManager = new(dolphinProcess);
                 gameManager.Run();
             }
             catch (Exception exception)
