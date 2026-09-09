@@ -1,24 +1,25 @@
-﻿using gameManager.src.Arguments;
+﻿using gameManager.src.Api;
+using gameManager.src.Arguments;
 using gameManager.src.Dolphin;
+using gameManager.src.Memory;
 using System.Diagnostics;
-using System.Text;
 
 namespace gameManager.src
 {
     public sealed class GameManager
     {
-        private bool _memoryTestCompleted;
-        private const long GameIdAddress = 0x80000000;
-        private const int GameIdLength = 6;
+        private readonly GameManagerApi _api;
         private readonly DolphinConnection _dolphin;
 
-        public GameManager(Process process)
+        public GameManager(Process process, MemoryResourceManager resources)
         {
             _dolphin = new DolphinConnection(process);
+            _api = new GameManagerApi(_dolphin, resources);
         }
 
         public void Run()
         {
+            
             Console.WriteLine("GameManager started.");
 
             while (true)
@@ -32,6 +33,8 @@ namespace gameManager.src
 
                 Console.WriteLine("Game initialized.");
 
+                Thread.Sleep(500);
+
                 RunGameLoop();
 
                 Console.WriteLine("Game is no longer running.");
@@ -43,64 +46,21 @@ namespace gameManager.src
 
         private void RunGameLoop()
         {
+            Thread.Sleep(500);
 
-            if (!_memoryTestCompleted)
-            {
-                TestGameIdMemory();
-                _memoryTestCompleted = true;
-            }
+            string? gameId = _api
+                .GetAsync<string>("GameId")
+                .GetAwaiter()
+                .GetResult();
+
+            Console.WriteLine($"API Game ID: {gameId}");
 
             while (_dolphin.IsGameRunning())
             {
                 Thread.Sleep(100);
             }
         }
-        private void TestGameIdMemory()
-        {
-            byte[] buffer = new byte[GameIdLength];
-
-            Thread.Sleep(500);
-
-            if (!_dolphin.TryRead(
-                new IntPtr(GameIdAddress),
-                buffer,
-                out int bytesRead))
-            {
-                Console.WriteLine("Failed to read game ID.");
-                return;
-            }
-
-            string gameId = Encoding.ASCII.GetString(buffer);
-
-            Console.WriteLine($"Game ID: '{gameId}'");
-            Console.WriteLine($"Bytes read: {bytesRead}");
-
-            byte[] testGameId = Encoding.ASCII.GetBytes("TEST01");
-
-            if (!_dolphin.TryWrite(
-                new IntPtr(GameIdAddress),
-                testGameId,
-                out int bytesWritten))
-            {
-                Console.WriteLine("Failed to write game ID.");
-                return;
-            }
-
-            Console.WriteLine($"Bytes written: {bytesWritten}");
-
-            Array.Clear(buffer);
-
-            if (_dolphin.TryRead(
-                new IntPtr(GameIdAddress),
-                buffer,
-                out bytesRead))
-            {
-                string newGameId = Encoding.ASCII.GetString(buffer);
-
-                Console.WriteLine($"Game ID after write: '{newGameId}'");
-            }
-        }
-
+        
         public static void Main(string[] args)
         {
             try
@@ -112,14 +72,19 @@ namespace gameManager.src
                 Console.WriteLine($"Dolphin: {arguments.DolphinPath}");
                 Console.WriteLine($"Game: {arguments.GamePath}");
 
+                //Loads the memory.json file for the game and configuration
+                string memoryFile = Path.Combine("Games", arguments.GameId, arguments.Configuration, "memory.json");
+                MemoryResourceManager resources = new(memoryFile);
+
                 // Launch Dolphin with the game
                 DolphinLauncher dolphinLauncher = new();
                 Process dolphinProcess = dolphinLauncher.Start(arguments.DolphinPath, arguments.GamePath);
 
                 // Start gameManager
-                GameManager gameManager = new(dolphinProcess);
+                GameManager gameManager = new(dolphinProcess, resources);
                 gameManager.Run();
             }
+
             catch (Exception exception)
             {
                 Console.WriteLine($"Fatal GameManager error: {exception.Message}");
