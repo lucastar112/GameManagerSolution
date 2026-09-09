@@ -91,24 +91,51 @@ namespace gameManager.src.Dolphin
         {
             bytesRead = 0;
 
+            if (_process is null || _process.HasExited)
+                return false;
+
+            if (_dolphin is null)
+                return false;
+
+            // Convert the emulated game RAM address
+            // into the corresponding address inside Dolphin.
+            if (!_dolphin.TryGetAddress(address, out IntPtr hostAddress))
+            {
+                Console.WriteLine(
+                    $"Failed to translate Dolphin RAM address 0x{address.ToInt64():X8}.");
+
+                return false;
+            }
+
             return ReadProcessMemory(
                 _readHandle,
-                address,
+                hostAddress,
                 buffer,
                 buffer.Length,
                 ref bytesRead);
         }
 
+
         public bool TryWrite(IntPtr address, byte[] data, out int bytesWritten)
         {
             bytesWritten = 0;
 
+            if (_process is null || _process.HasExited)
+                return false;
+
+            if (_dolphin is null)
+                return false;
+
+            if (!_dolphin.TryGetAddress(address, out IntPtr hostAddress))
+                return false;
+
             return WriteProcessMemory(
                 _writeHandle,
-                address,
+                hostAddress,
                 data,
                 data.Length,
                 ref bytesWritten);
         }
+
     }
 }

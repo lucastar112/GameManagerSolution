@@ -1,11 +1,15 @@
-﻿using System.Diagnostics;
+﻿using gameManager.src.Arguments;
 using gameManager.src.Dolphin;
-using gameManager.src.Arguments;
+using System.Diagnostics;
+using System.Text;
 
 namespace gameManager.src
 {
     public sealed class GameManager
     {
+        private bool _memoryTestCompleted;
+        private const long GameIdAddress = 0x80000000;
+        private const int GameIdLength = 6;
         private readonly DolphinConnection _dolphin;
 
         public GameManager(Process process)
@@ -35,13 +39,65 @@ namespace gameManager.src
                 Thread.Sleep(1000);
             }
         }
+        
 
         private void RunGameLoop()
         {
+
+            if (!_memoryTestCompleted)
+            {
+                TestGameIdMemory();
+                _memoryTestCompleted = true;
+            }
+
             while (_dolphin.IsGameRunning())
             {
-                // GameManager logic will eventually live here.
                 Thread.Sleep(100);
+            }
+        }
+        private void TestGameIdMemory()
+        {
+            byte[] buffer = new byte[GameIdLength];
+
+            Thread.Sleep(500);
+
+            if (!_dolphin.TryRead(
+                new IntPtr(GameIdAddress),
+                buffer,
+                out int bytesRead))
+            {
+                Console.WriteLine("Failed to read game ID.");
+                return;
+            }
+
+            string gameId = Encoding.ASCII.GetString(buffer);
+
+            Console.WriteLine($"Game ID: '{gameId}'");
+            Console.WriteLine($"Bytes read: {bytesRead}");
+
+            byte[] testGameId = Encoding.ASCII.GetBytes("TEST01");
+
+            if (!_dolphin.TryWrite(
+                new IntPtr(GameIdAddress),
+                testGameId,
+                out int bytesWritten))
+            {
+                Console.WriteLine("Failed to write game ID.");
+                return;
+            }
+
+            Console.WriteLine($"Bytes written: {bytesWritten}");
+
+            Array.Clear(buffer);
+
+            if (_dolphin.TryRead(
+                new IntPtr(GameIdAddress),
+                buffer,
+                out bytesRead))
+            {
+                string newGameId = Encoding.ASCII.GetString(buffer);
+
+                Console.WriteLine($"Game ID after write: '{newGameId}'");
             }
         }
 
