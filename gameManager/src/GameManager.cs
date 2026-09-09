@@ -1,6 +1,7 @@
 ﻿using gameManager.src.Api;
 using gameManager.src.Arguments;
 using gameManager.src.Dolphin;
+using gameManager.src.Ipc;
 using gameManager.src.Memory;
 using System.Diagnostics;
 
@@ -10,17 +11,22 @@ namespace gameManager.src
     {
         private readonly GameManagerApi _api;
         private readonly DolphinConnection _dolphin;
+        private readonly GameManagerIpcServer _ipcServer;
 
         public GameManager(Process process, MemoryResourceManager resources)
         {
             _dolphin = new DolphinConnection(process);
+
             _api = new GameManagerApi(_dolphin, resources);
+
+            _ipcServer = new GameManagerIpcServer(_api);
         }
 
         public void Run()
         {
-            
             Console.WriteLine("GameManager started.");
+
+            _ = _ipcServer.RunAsync();
 
             while (true)
             {
@@ -42,7 +48,7 @@ namespace gameManager.src
                 Thread.Sleep(1000);
             }
         }
-        
+
 
         private void RunGameLoop()
         {
