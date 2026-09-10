@@ -16,8 +16,14 @@ namespace gameManager.src.Ipc
 
         private int _clientId;
         private long _nextRequestId;
-
         private readonly GameManagerApi _api;
+
+        private readonly SemaphoreSlim _clientConnectedSignal = new(0);
+        //private readonly TaskCompletionSource<int> _clientConnection = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource<bool> _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+
+        private readonly ConcurrentDictionary<int, string> _clientNames = new();
 
         public IReadOnlyCollection<int> GetConnectedClientIds()
         {
@@ -46,6 +52,8 @@ namespace gameManager.src.Ipc
         {
             Console.WriteLine(
                 $"IPC server listening on '{PipeName}'.");
+
+            _ready.TrySetResult(true);
 
             while (!cancellationToken.IsCancellationRequested)
             {
@@ -170,6 +178,8 @@ namespace gameManager.src.Ipc
 
                 _clients[clientId] = client;
 
+                _clientConnectedSignal.Release();
+
                 try
                 {
                     Console.WriteLine(
@@ -190,8 +200,8 @@ namespace gameManager.src.Ipc
                         pipe.IsConnected &&
                         !cancellationToken.IsCancellationRequested)
                     {
-                        Console.WriteLine(
-                            $"IPC {clientId}: waiting for request...");
+                        // Useful for debugging, but may produce a lot of output in production. Uncomment the following line if you want to log waiting for requests.
+                        //Console.WriteLine($"IPC {clientId}: waiting for request...");
 
                         string? json =
                             await reader.ReadLineAsync(
@@ -210,8 +220,8 @@ namespace gameManager.src.Ipc
                             continue;
                         }
 
-                        Console.WriteLine(
-                            $"IPC {clientId}: received: {json}");
+                        // Useful for debugging, but may produce a lot of output in production. Uncomment the following line if you want to log received messages.
+                        //Console.WriteLine($"IPC {clientId}: received: {json}");
 
                         /*
                          * A message coming from the child is always an
@@ -276,10 +286,7 @@ namespace gameManager.src.Ipc
                             continue;
                         }
 
-                        IpcResponse ipcResponse =
-                            await HandleRequestAsync(
-                                request,
-                                cancellationToken);
+                        IpcResponse ipcResponse = await HandleRequestAsync(request, clientId, cancellationToken);
 
                         await client.WriteAsync(
                             JsonSerializer.Serialize(
@@ -310,6 +317,8 @@ namespace gameManager.src.Ipc
                     _clients.TryRemove(
                         clientId,
                         out _);
+
+                    _clientNames.TryRemove(clientId, out _);
 
                     foreach (TaskCompletionSource<IpcResponse> pending
                              in client.PendingRequests.Values)
@@ -367,9 +376,8 @@ namespace gameManager.src.Ipc
                 return;
             }
 
-            Console.WriteLine(
-                $"IPC client {client.ClientId}: " +
-                $"received response {response.RequestId}.");
+            // Useful for debugging, but may produce a lot of output in production. Uncomment the following line if you want to log received responses.
+            //Console.WriteLine($"IPC client {client.ClientId}: " + $"received response {response.RequestId}.");
 
             if (client.PendingRequests.TryRemove(
                     response.RequestId,
@@ -441,9 +449,7 @@ namespace gameManager.src.Ipc
             };
         }
 
-        private async Task<IpcResponse> HandleRequestAsync(
-            IpcRequest request,
-            CancellationToken cancellationToken)
+        private async Task<IpcResponse> HandleRequestAsync(IpcRequest request, int clientId, CancellationToken cancellationToken)
         {
             try
             {
@@ -464,9 +470,9 @@ namespace gameManager.src.Ipc
 
                     IpcOperation.Ping =>
                         HandlePing(request),
+                    IpcOperation.Register => HandleRegister(request, clientId),
 
-                    _ =>
-                        CreateErrorResponse(
+                    _ => CreateErrorResponse(
                             request,
                             IpcErrorCodes.UnknownOperation,
                             $"Unknown operation '{request.Operation}'.")
@@ -587,6 +593,80 @@ namespace gameManager.src.Ipc
                     _writeLock.Release();
                 }
             }
+
+        }
+        public async Task<int> WaitForClientAsync(
+    CancellationToken cancellationToken = default)
+        {
+            await _clientConnectedSignal.WaitAsync(
+                cancellationToken);
+
+            IReadOnlyCollection<int> clientIds =
+                GetConnectedClientIds();
+
+            if (clientIds.Count == 0)
+            {
+                throw new InvalidOperationException(
+                    "A client connection was signaled, but no client is connected.");
+            }
+
+            return clientIds.Max();
+        }
+
+        public Task WaitUntilReadyAsync(
+    CancellationToken cancellationToken = default)
+        {
+            return _ready.Task.WaitAsync(
+                cancellationToken);
+        }
+
+        public bool TryGetClientName(int clientId, out string? name)
+        {
+            return _clientNames.TryGetValue(
+                clientId,
+                out name);
+        }
+
+        public IReadOnlyDictionary<int, string> GetRegisteredClients()
+        {
+            return new Dictionary<int, string>(
+                _clientNames);
+        }
+
+        private IpcResponse HandleRegister(
+    IpcRequest request,
+    int clientId)
+        {
+            if (request.Value is null)
+            {
+                return CreateErrorResponse(
+                    request,
+                    IpcErrorCodes.InvalidValue,
+                    "Registration data is missing.");
+            }
+
+            string? name =
+                request.Value.ToString();
+
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                return CreateErrorResponse(
+                    request,
+                    IpcErrorCodes.InvalidValue,
+                    "A valid child name is required.");
+            }
+
+            _clientNames[clientId] = name;
+
+            Console.WriteLine(
+                $"Child '{name}' registered as client {clientId}.");
+
+            return new IpcResponse
+            {
+                RequestId = request.RequestId,
+                Success = true,
+                Value = name
+            };
         }
     }
 }

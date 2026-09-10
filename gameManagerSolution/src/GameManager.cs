@@ -3,6 +3,7 @@ using gameManager.src.Arguments;
 using gameManager.src.Dolphin;
 using gameManager.src.Ipc;
 using gameManager.src.Memory;
+using gameManager.src.Children;
 using System.Diagnostics;
 
 namespace gameManager.src
@@ -12,90 +13,74 @@ namespace gameManager.src
         private readonly GameManagerApi _api;
         private readonly DolphinConnection _dolphin;
         private readonly GameManagerIpcServer _ipcServer;
+        private readonly ChildProcessManager _childProcessManager;
+        private readonly ChildConfigurationManager _childConfiguration;
 
 
         private static readonly TimeSpan ChildStatusInterval = TimeSpan.FromSeconds(1);
 
         private static readonly TimeSpan ChildStatusTimeout = TimeSpan.FromMilliseconds(500);
 
-        public GameManager(Process process, MemoryResourceManager resources)
+        public GameManager(Process process, MemoryResourceManager resources, ChildConfigurationManager childConfiguration)
         {
             _dolphin = new DolphinConnection(process);
 
-            _api = new GameManagerApi(_dolphin, resources);
+            _api = new GameManagerApi( _dolphin, resources);
 
             _ipcServer = new GameManagerIpcServer(_api);
+
+            _childProcessManager = new ChildProcessManager(_ipcServer);
+
+            _childConfiguration = childConfiguration;
         }
 
         public void Run()
         {
             Console.WriteLine("GameManager started.");
 
-            _ = _ipcServer.RunAsync();
-            _ = RunChildStatusMonitorAsync(CancellationToken.None);
+            Task ipcServerTask =
+                _ipcServer.RunAsync();
 
-            while (true)
-            {
-                if (!_dolphin.IsGameRunning())
-                {
-                    Console.WriteLine("Waiting for game initialization...");
-                    Thread.Sleep(1000);
-                    continue;
-                }
+            _ipcServer
+                .WaitUntilReadyAsync()
+                .GetAwaiter()
+                .GetResult();
 
-                Console.WriteLine("Game initialized.");
+            Console.WriteLine(
+                "IPC server is ready.");
 
-                Thread.Sleep(500);
+            WaitForGameInitialization();
 
-                RunGameLoop();
+            StartChildrenAsync(
+                CancellationToken.None)
+                .GetAwaiter()
+                .GetResult();
 
-                Console.WriteLine("Game is no longer running.");
+            _ = RunChildStatusMonitorAsync(
+                CancellationToken.None);
 
-                Thread.Sleep(1000);
-            }
+            RunGameLoop();
         }
 
 
         private void RunGameLoop()
         {
-            Thread.Sleep(500);
-
-            string? gameId = _api
-                .GetAsync<string>("GameId")
-                .GetAwaiter()
-                .GetResult();
+            string? gameId =
+                _api
+                    .GetAsync<string>("GameId")
+                    .GetAwaiter()
+                    .GetResult();
 
             Console.WriteLine(
                 $"API Game ID: {gameId}");
 
-            using CancellationTokenSource heartbeatCts =
-                new CancellationTokenSource();
-
-            Task heartbeatTask =
-                RunGameHeartbeatAsync(
-                    heartbeatCts.Token);
-
-            try
+            while (_dolphin.IsGameRunning())
             {
-                while (_dolphin.IsGameRunning())
-                {
-                    Thread.Sleep(100);
-                }
+                Thread.Sleep(100);
             }
-            finally
-            {
-                heartbeatCts.Cancel();
 
-                try
-                {
-                    heartbeatTask
-                        .GetAwaiter()
-                        .GetResult();
-                }
-                catch (OperationCanceledException)
-                {
-                }
-            }
+            Console.WriteLine(
+                "Game is no longer running.");
         }
 
         private static readonly TimeSpan HeartbeatInterval = TimeSpan.FromSeconds(1);
@@ -160,8 +145,16 @@ namespace gameManager.src
                                 clientId,
                                 cancellationToken);
 
-                        Console.WriteLine(
-                            $"Child {clientId} status: {status}");
+                        if (_ipcServer.TryGetClientName(clientId, out string? name))
+                        {
+                            // Useful for debugging, but can be noisy
+                            //Console.WriteLine($"Child '{name}' status: {status}");
+                        }
+                        else
+                        {
+                            // Useful for debugging, but can be noisy
+                            //Console.WriteLine($"Unregistered child {clientId} status: {status}");
+                        }
                     }
                     catch (TimeoutException)
                     {
@@ -187,6 +180,53 @@ namespace gameManager.src
             }
         }
 
+        private async Task StartChildrenAsync(CancellationToken cancellationToken)
+        {
+            IReadOnlyList<ChildConfiguration> children =
+                _childConfiguration.GetChildren();
+
+            foreach (ChildConfiguration child in children)
+            {
+                if (!child.Enabled)
+                {
+                    Console.WriteLine(
+                        $"Child '{child.Name}' is disabled.");
+
+                    continue;
+                }
+
+                try
+                {
+                    await _childProcessManager.StartChildAsync(
+                        child,
+                        cancellationToken);
+                }
+                catch (Exception exception)
+                {
+                    Console.WriteLine(
+                        $"Failed to start child '{child.Name}':");
+
+                    Console.WriteLine(exception);
+                }
+            }
+        }
+
+        private void WaitForGameInitialization()
+        {
+            Console.WriteLine(
+                "Waiting for game initialization...");
+
+            while (!_dolphin.IsGameRunning())
+            {
+                Thread.Sleep(500);
+            }
+
+            Console.WriteLine(
+                "Game initialized.");
+
+            Thread.Sleep(500);
+        }
+
         public static void Main(string[] args)
         {
             try
@@ -199,15 +239,18 @@ namespace gameManager.src
                 Console.WriteLine($"Game: {arguments.GamePath}");
 
                 //Loads the memory.json file for the game and configuration
-                string memoryFile = Path.Combine("Games", arguments.GameId, arguments.Configuration, "memory.json");
+                string memoryFile = Path.Combine("games", arguments.GameId, arguments.Configuration, "config", "memory.json");
                 MemoryResourceManager resources = new(memoryFile);
+
+                string childrenFile = Path.Combine("games", arguments.GameId, arguments.Configuration, "config", "children.json");
+                ChildConfigurationManager childConfiguration = new(childrenFile);
 
                 // Launch Dolphin with the game
                 DolphinLauncher dolphinLauncher = new();
                 Process dolphinProcess = dolphinLauncher.Start(arguments.DolphinPath, arguments.GamePath);
 
                 // Start gameManager
-                GameManager gameManager = new(dolphinProcess, resources);
+                GameManager gameManager = new(dolphinProcess, resources, childConfiguration);
                 gameManager.Run();
             }
 

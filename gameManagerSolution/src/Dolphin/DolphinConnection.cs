@@ -137,17 +137,17 @@ namespace gameManager.src.Dolphin
                 return false;
             }
 
-            Console.WriteLine($"TryRead: Dolphin RAM address = 0x{address.ToInt64():X8}");
+            // Usefull for debugging, but can be noisy
+            //Console.WriteLine($"TryRead: Dolphin RAM address = 0x{address.ToInt64():X8}");
 
             if (!_dolphin.TryGetAddress(address, out IntPtr hostAddress))
             {
                 Console.WriteLine("TryRead: failed to translate address.");
                 return false;
             }
-
-            Console.WriteLine($"TryRead: host address = 0x{hostAddress.ToInt64():X}");
-
-            Console.WriteLine($"TryRead: read handle = 0x{_readHandle.ToInt64():X}");
+            // Usefull for debugging, but can be noisy
+            //Console.WriteLine($"TryRead: host address = 0x{hostAddress.ToInt64():X}");
+            //Console.WriteLine($"TryRead: read handle = 0x{_readHandle.ToInt64():X}");
 
             if (!ReadProcessMemory(
                 _readHandle,
@@ -160,8 +160,8 @@ namespace gameManager.src.Dolphin
 
                 return false;
             }
-
-            Console.WriteLine($"TryRead: successfully read {bytesRead} bytes.");
+            // Usefull for debugging, but can be noisy
+            //Console.WriteLine($"TryRead: successfully read {bytesRead} bytes.");
 
             return true;
         }
