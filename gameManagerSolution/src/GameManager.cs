@@ -12,7 +12,11 @@ namespace gameManager.src
         private readonly GameManagerApi _api;
         private readonly DolphinConnection _dolphin;
         private readonly GameManagerIpcServer _ipcServer;
-        
+
+
+        private static readonly TimeSpan ChildStatusInterval = TimeSpan.FromSeconds(1);
+
+        private static readonly TimeSpan ChildStatusTimeout = TimeSpan.FromMilliseconds(500);
 
         public GameManager(Process process, MemoryResourceManager resources)
         {
@@ -28,6 +32,7 @@ namespace gameManager.src
             Console.WriteLine("GameManager started.");
 
             _ = _ipcServer.RunAsync();
+            _ = RunChildStatusMonitorAsync(CancellationToken.None);
 
             while (true)
             {
@@ -135,6 +140,50 @@ namespace gameManager.src
                 {
                     break;
                 }
+            }
+        }
+
+        private async Task RunChildStatusMonitorAsync(
+    CancellationToken cancellationToken)
+        {
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                IReadOnlyCollection<int> clientIds =
+                    _ipcServer.GetConnectedClientIds();
+
+                foreach (int clientId in clientIds)
+                {
+                    try
+                    {
+                        string? status =
+                            await _ipcServer.GetStatusAsync(
+                                clientId,
+                                cancellationToken);
+
+                        Console.WriteLine(
+                            $"Child {clientId} status: {status}");
+                    }
+                    catch (TimeoutException)
+                    {
+                        Console.WriteLine(
+                            $"Child {clientId} did not respond.");
+                    }
+                    catch (OperationCanceledException)
+                        when (cancellationToken.IsCancellationRequested)
+                    {
+                        return;
+                    }
+                    catch (Exception exception)
+                    {
+                        Console.WriteLine(
+                            $"Child {clientId} status check failed: " +
+                            exception.Message);
+                    }
+                }
+
+                await Task.Delay(
+                    ChildStatusInterval,
+                    cancellationToken);
             }
         }
 
