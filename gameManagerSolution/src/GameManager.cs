@@ -12,6 +12,7 @@ namespace gameManager.src
         private readonly GameManagerApi _api;
         private readonly DolphinConnection _dolphin;
         private readonly GameManagerIpcServer _ipcServer;
+        
 
         public GameManager(Process process, MemoryResourceManager resources)
         {
@@ -59,14 +60,84 @@ namespace gameManager.src
                 .GetAwaiter()
                 .GetResult();
 
-            Console.WriteLine($"API Game ID: {gameId}");
+            Console.WriteLine(
+                $"API Game ID: {gameId}");
 
-            while (_dolphin.IsGameRunning())
+            using CancellationTokenSource heartbeatCts =
+                new CancellationTokenSource();
+
+            Task heartbeatTask =
+                RunGameHeartbeatAsync(
+                    heartbeatCts.Token);
+
+            try
             {
-                Thread.Sleep(100);
+                while (_dolphin.IsGameRunning())
+                {
+                    Thread.Sleep(100);
+                }
+            }
+            finally
+            {
+                heartbeatCts.Cancel();
+
+                try
+                {
+                    heartbeatTask
+                        .GetAwaiter()
+                        .GetResult();
+                }
+                catch (OperationCanceledException)
+                {
+                }
             }
         }
-        
+
+        private static readonly TimeSpan HeartbeatInterval = TimeSpan.FromSeconds(1);
+        private async Task RunGameHeartbeatAsync(CancellationToken cancellationToken)
+        {
+            bool heartbeat = false;
+
+            while (
+                _dolphin.IsGameRunning() &&
+                !cancellationToken.IsCancellationRequested)
+            {
+                heartbeat = !heartbeat;
+
+                try
+                {
+                    await _api.SetAsync(
+                        "GameManagerHeartbeat",
+                        heartbeat,
+                        cancellationToken);
+
+                    //Console.WriteLine($"GameManager heartbeat: {(heartbeat ? 1 : 0)}");
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+                catch (Exception exception)
+                {
+                    Console.WriteLine(
+                        $"Heartbeat write failed: {exception.Message}");
+
+                    break;
+                }
+
+                try
+                {
+                    await Task.Delay(
+                        HeartbeatInterval,
+                        cancellationToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+            }
+        }
+
         public static void Main(string[] args)
         {
             try

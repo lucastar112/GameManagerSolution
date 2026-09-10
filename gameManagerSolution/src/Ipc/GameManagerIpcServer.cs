@@ -1,9 +1,9 @@
-﻿using System.IO.Pipes;
-using System.Text;
+﻿using gameManager.src.Api;
+using GameManager.Shared.Ipc;
+using System.IO.Pipes;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using gameManager.src.Api;
-using GameManager.Shared.Ipc;
+using System.Text;
 
 namespace gameManager.src.Ipc
 {
@@ -47,12 +47,13 @@ namespace gameManager.src.Ipc
                 {
                     await pipe.WaitForConnectionAsync(cancellationToken);
 
-                    Console.WriteLine(
-                        $"IPC client connected (ID {_clientId}).");
+                    int clientId = Interlocked.Increment(ref _clientId);
+
+                    Console.WriteLine($"IPC client connected (ID {_clientId}).");
 
                     _ = HandleClientSafelyAsync(
                         pipe,
-                        _clientId,
+                        clientId,
                         cancellationToken);
                 }
                 catch
@@ -81,33 +82,32 @@ namespace gameManager.src.Ipc
         }
 
         private async Task HandleClientAsync(
-            NamedPipeServerStream pipe,
-            int clientId,
-            CancellationToken cancellationToken)
+    NamedPipeServerStream pipe,
+    int clientId,
+    CancellationToken cancellationToken)
         {
-            Console.WriteLine($"IPC client {clientId}: handler started.");
-
             await using (pipe)
             {
                 try
                 {
-                    using StreamReader reader =
-                        new(
-                            pipe,
-                            Encoding.UTF8,
-                            detectEncodingFromByteOrderMarks: false,
-                            bufferSize: 1024,
-                            leaveOpen: true);
+                    Console.WriteLine(
+                        $"IPC client {clientId}: handler started.");
 
-                    await using StreamWriter writer =
-                        new(
-                            pipe,
-                            new UTF8Encoding(false),
-                            bufferSize: 1024,
-                            leaveOpen: true)
-                        {
-                            AutoFlush = true
-                        };
+                    using StreamReader reader = new(
+                        pipe,
+                        Encoding.UTF8,
+                        detectEncodingFromByteOrderMarks: false,
+                        bufferSize: 1024,
+                        leaveOpen: true);
+
+                    using StreamWriter writer = new(
+                        pipe,
+                        new UTF8Encoding(false),
+                        bufferSize: 1024,
+                        leaveOpen: true)
+                    {
+                        AutoFlush = true
+                    };
 
                     Console.WriteLine(
                         $"IPC client {clientId} ready.");
@@ -117,55 +117,106 @@ namespace gameManager.src.Ipc
                         !cancellationToken.IsCancellationRequested)
                     {
                         Console.WriteLine(
-                            $"IPC {clientId}: " +
-                            "waiting for request...");
+                            $"IPC {clientId}: waiting for request...");
 
                         string? requestJson =
-                            await reader.ReadLineAsync(
-                                cancellationToken);
+                            await reader.ReadLineAsync(cancellationToken);
 
                         if (requestJson is null)
                         {
+                            Console.WriteLine(
+                                $"IPC client {clientId} closed the connection.");
+
                             break;
                         }
 
-                        Console.WriteLine(
-                            $"IPC {clientId}: received request: " +
-                            requestJson);
-
-                        IpcRequest? request =
-                            JsonSerializer.Deserialize<IpcRequest>(
-                                requestJson,
-                                JsonOptions);
-
-                        if (request is null)
+                        if (string.IsNullOrWhiteSpace(requestJson))
                         {
                             Console.WriteLine(
-                                $"IPC {clientId}: invalid request.");
+                                $"IPC {clientId}: received an empty request.");
 
                             continue;
                         }
 
-                        IpcResponse response =
+                        Console.WriteLine(
+                            $"IPC {clientId}: received request: {requestJson}");
+
+                        IpcRequest? request;
+
+                        try
+                        {
+                            request =
+                                JsonSerializer.Deserialize<IpcRequest>(
+                                    requestJson,
+                                    JsonOptions);
+                        }
+                        catch (JsonException exception)
+                        {
+                            Console.WriteLine(
+                                $"IPC {clientId}: invalid JSON request.");
+
+                            Console.WriteLine(exception);
+
+                            IpcResponse response = new()
+                            {
+                                RequestId = 0,
+                                Success = false,
+                                Error = new IpcError
+                                {
+                                    Code = IpcErrorCodes.InvalidRequest,
+                                    Message = "Invalid JSON request."
+                                }
+                            };
+
+                            await writer.WriteLineAsync(
+                                JsonSerializer.Serialize(
+                                    response,
+                                    JsonOptions));
+
+                            continue;
+                        }
+
+                        if (request is null)
+                        {
+                            IpcResponse response = new()
+                            {
+                                RequestId = 0,
+                                Success = false,
+                                Error = new IpcError
+                                {
+                                    Code = IpcErrorCodes.InvalidRequest,
+                                    Message = "Request cannot be null."
+                                }
+                            };
+
+                            await writer.WriteLineAsync(
+                                JsonSerializer.Serialize(
+                                    response,
+                                    JsonOptions));
+
+                            continue;
+                        }
+
+                        IpcResponse ipcResponse =
                             await HandleRequestAsync(
                                 request,
                                 cancellationToken);
 
                         string responseJson =
                             JsonSerializer.Serialize(
-                                response,
+                                ipcResponse,
                                 JsonOptions);
 
                         Console.WriteLine(
-                            $"IPC {clientId}: sending response: " +
-                            responseJson);
+                            $"IPC {clientId}: sending response: {responseJson}");
 
-                        await writer.WriteLineAsync(
-                            responseJson);
+                        await writer.WriteLineAsync(responseJson);
                     }
                 }
                 catch (OperationCanceledException)
                 {
+                    Console.WriteLine(
+                        $"IPC client {clientId} handler cancelled.");
                 }
                 catch (IOException)
                 {
@@ -175,8 +226,9 @@ namespace gameManager.src.Ipc
                 catch (Exception exception)
                 {
                     Console.WriteLine(
-                        $"IPC client {clientId} error: " +
-                        exception);
+                        $"IPC client {clientId} handler failed:");
+
+                    Console.WriteLine(exception);
                 }
             }
         }
@@ -241,40 +293,90 @@ namespace gameManager.src.Ipc
     IpcRequest request,
     CancellationToken cancellationToken)
         {
-            Console.WriteLine($"Dispatching operation: {request.Operation}");
-
-            switch (request.Operation)
+            try
             {
-                case IpcOperation.GetResource:
-                    return await HandleGetAsync(
-                        request,
-                        cancellationToken);
+                Console.WriteLine(
+                    $"Dispatching operation: {request.Operation}");
 
-                case IpcOperation.SetResource:
-                    return await HandleSetAsync(
-                        request,
-                        cancellationToken);
+                return request.Operation switch
+                {
+                    IpcOperation.GetResource =>
+                        await HandleGetAsync(request, cancellationToken),
 
-                case IpcOperation.Ping:
-                    return new IpcResponse
-                    {
-                        RequestId = request.RequestId,
-                        Success = true
-                    };
+                    IpcOperation.SetResource =>
+                        await HandleSetAsync(request, cancellationToken),
 
-                default:
-                    return new IpcResponse
-                    {
-                        RequestId = request.RequestId,
-                        Success = false,
-                        Error = new IpcError
-                        {
-                            Code = "UNKNOWN_OPERATION",
-                            Message =
-                                $"Unknown operation '{request.Operation}'."
-                        }
-                    };
+                    IpcOperation.Ping =>
+                        HandlePing(request),
+
+                    _ =>
+                        CreateErrorResponse(
+                            request,
+                            IpcErrorCodes.UnknownOperation,
+                            $"Unknown operation '{request.Operation}'.")
+                };
             }
+            catch (KeyNotFoundException exception)
+            {
+                return CreateErrorResponse(
+                    request,
+                    IpcErrorCodes.InvalidResource,
+                    exception.Message);
+            }
+            catch (NotSupportedException exception)
+            {
+                return CreateErrorResponse(
+                    request,
+                    IpcErrorCodes.InvalidValue,
+                    exception.Message);
+            }
+            catch (InvalidOperationException exception)
+            {
+                return CreateErrorResponse(
+                    request,
+                    IpcErrorCodes.InvalidRequest,
+                    exception.Message);
+            }
+            catch (Exception exception)
+            {
+                Console.WriteLine(
+                    $"IPC request {request.RequestId} failed:");
+                Console.WriteLine(exception);
+
+                return CreateErrorResponse(
+                    request,
+                    IpcErrorCodes.InternalError,
+                    "An internal GameManager error occurred.");
+            }
+        }
+
+        private static IpcResponse CreateErrorResponse(
+    IpcRequest request,
+    string code,
+    string message)
+        {
+            return new IpcResponse
+            {
+                RequestId = request.RequestId,
+                Success = false,
+                Value = null,
+                Error = new IpcError
+                {
+                    Code = code,
+                    Message = message
+                }
+            };
+        }
+
+        private static IpcResponse HandlePing(IpcRequest request)
+        {
+            return new IpcResponse
+            {
+                RequestId = request.RequestId,
+                Success = true,
+                Value = "PONG",
+                Error = null
+            };
         }
     }
 }

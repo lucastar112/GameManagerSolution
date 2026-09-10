@@ -84,49 +84,73 @@ namespace gameManager.src.Api
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            MemoryResource definition = _resources.Get(resource);
+            MemoryResource definition =
+                _resources.Get(resource);
 
+            byte[] buffer =
+                ConvertValue(value);
+
+            if (buffer.Length != definition.Length)
+            {
+                throw new InvalidOperationException(
+                    $"Resource '{definition.Name}' requires exactly " +
+                    $"{definition.Length} bytes, but received {buffer.Length}.");
+            }
+
+            if (!_dolphin.TryWrite(
+                    definition.Address,
+                    buffer,
+                    out int bytesWritten))
+            {
+                throw new InvalidOperationException(
+                    $"Failed to write resource '{definition.Name}'.");
+            }
+
+            if (bytesWritten != buffer.Length)
+            {
+                throw new InvalidOperationException(
+                    $"Resource '{definition.Name}' wrote {bytesWritten} bytes, " +
+                    $"expected {buffer.Length}.");
+            }
+
+            return Task.CompletedTask;
+        }
+
+        private static byte[] ConvertValue(object value)
+        {
             if (value is JsonElement jsonElement)
             {
                 if (jsonElement.ValueKind == JsonValueKind.String)
                 {
-                    value = jsonElement.GetString()!;
+                    value = jsonElement.GetString()
+                        ?? throw new InvalidOperationException(
+                            "String value cannot be null.");
+                }
+                else if (
+                    jsonElement.ValueKind == JsonValueKind.True ||
+                    jsonElement.ValueKind == JsonValueKind.False)
+                {
+                    value = jsonElement.GetBoolean();
                 }
                 else
                 {
                     throw new NotSupportedException(
-                        $"JSON value type '{jsonElement.ValueKind}' is not supported yet.");
+                        $"JSON value type '{jsonElement.ValueKind}' " +
+                        "is not supported yet.");
                 }
             }
 
             if (value is string stringValue)
             {
-                byte[] buffer = Encoding.ASCII.GetBytes(stringValue);
+                return Encoding.ASCII.GetBytes(stringValue);
+            }
 
-                if (buffer.Length != definition.Length)
+            if (value is bool boolValue)
+            {
+                return new byte[]
                 {
-                    throw new InvalidOperationException(
-                        $"Resource '{definition.Name}' requires exactly " +
-                        $"{definition.Length} bytes, but received {buffer.Length}.");
-                }
-
-                if (!_dolphin.TryWrite(
-                        definition.Address,
-                        buffer,
-                        out int bytesWritten))
-                {
-                    throw new InvalidOperationException(
-                        $"Failed to write resource '{definition.Name}'.");
-                }
-
-                if (bytesWritten != buffer.Length)
-                {
-                    throw new InvalidOperationException(
-                        $"Resource '{definition.Name}' wrote {bytesWritten} bytes, " +
-                        $"expected {buffer.Length}.");
-                }
-
-                return Task.CompletedTask;
+            boolValue ? (byte)1 : (byte)0
+                };
             }
 
             throw new NotSupportedException(
