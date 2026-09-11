@@ -21,86 +21,69 @@ namespace gameManager.src
 
         private static readonly TimeSpan ChildStatusTimeout = TimeSpan.FromMilliseconds(500);
 
+        /// <summary>
+        /// Starts GameManager's main functionnality
+        /// </summary>
         public GameManager(Process process, MemoryResourceManager resources, ChildConfigurationManager childConfiguration)
         {
             _dolphin = new DolphinConnection(process);
-
             _api = new GameManagerApi( _dolphin, resources);
-
             _ipcServer = new GameManagerIpcServer(_api);
-
             _childProcessManager = new ChildProcessManager(_ipcServer);
-
             _childConfiguration = childConfiguration;
         }
 
+        /// <summary>
+        /// Initialise the setup
+        /// </summary>
         public void Run()
         {
             Console.WriteLine("GameManager started.");
 
-            Task ipcServerTask =
-                _ipcServer.RunAsync();
+            Task ipcServerTask = _ipcServer.RunAsync();
+            _ipcServer.WaitUntilReadyAsync().GetAwaiter().GetResult();
 
-            _ipcServer
-                .WaitUntilReadyAsync()
-                .GetAwaiter()
-                .GetResult();
-
-            Console.WriteLine(
-                "IPC server is ready.");
+            Console.WriteLine("IPC server is ready.");
 
             WaitForGameInitialization();
-
-            StartChildrenAsync(
-                CancellationToken.None)
-                .GetAwaiter()
-                .GetResult();
-
-            _ = RunChildStatusMonitorAsync(
-                CancellationToken.None);
-
+            StartChildrenAsync(CancellationToken.None).GetAwaiter().GetResult();
+            _ = RunChildStatusMonitorAsync(CancellationToken.None);
+            _ = RunGameHeartbeatAsync(CancellationToken.None);
             RunGameLoop();
         }
 
-
+        /// <summary>
+        /// Main loop
+        /// </summary>
         private void RunGameLoop()
         {
-            string? gameId =
-                _api
-                    .GetAsync<string>("GameId")
-                    .GetAwaiter()
-                    .GetResult();
-
-            Console.WriteLine(
-                $"API Game ID: {gameId}");
+            string? gameId =_api.GetAsync<string>("GameId").GetAwaiter().GetResult();
+            Console.WriteLine($"API Game ID: {gameId}");
 
             while (_dolphin.IsGameRunning())
-            {
                 Thread.Sleep(100);
-            }
-
-            Console.WriteLine(
-                "Game is no longer running.");
+            
+            Console.WriteLine("Game is no longer running.");
         }
 
+        /// <summary>
+        /// Checks the child's "Heartbeat" to ensure child all the necessary processes are running
+        /// </summary>
         private static readonly TimeSpan HeartbeatInterval = TimeSpan.FromSeconds(1);
+
+        /// <summary>
+        /// Sends an "Heartbeat" to the game, used for exception management ingame
+        /// </summary>
         private async Task RunGameHeartbeatAsync(CancellationToken cancellationToken)
         {
             bool heartbeat = false;
 
-            while (
-                _dolphin.IsGameRunning() &&
-                !cancellationToken.IsCancellationRequested)
+            while (_dolphin.IsGameRunning() && !cancellationToken.IsCancellationRequested)
             {
                 heartbeat = !heartbeat;
-
                 try
                 {
-                    await _api.SetAsync(
-                        "GameManagerHeartbeat",
-                        heartbeat,
-                        cancellationToken);
-
+                    await _api.SetAsync("GameManagerHeartbeat", heartbeat, cancellationToken);
                     //Console.WriteLine($"GameManager heartbeat: {(heartbeat ? 1 : 0)}");
                 }
                 catch (OperationCanceledException)
@@ -109,17 +92,13 @@ namespace gameManager.src
                 }
                 catch (Exception exception)
                 {
-                    Console.WriteLine(
-                        $"Heartbeat write failed: {exception.Message}");
-
+                    Console.WriteLine($"Heartbeat write failed: {exception.Message}");
                     break;
                 }
 
                 try
                 {
-                    await Task.Delay(
-                        HeartbeatInterval,
-                        cancellationToken);
+                    await Task.Delay(HeartbeatInterval, cancellationToken);
                 }
                 catch (OperationCanceledException)
                 {
@@ -128,22 +107,20 @@ namespace gameManager.src
             }
         }
 
-        private async Task RunChildStatusMonitorAsync(
-    CancellationToken cancellationToken)
+        /// <summary>
+        /// Request an "Heartbeat" from the child prcesses, used for exception management
+        /// </summary>
+        private async Task RunChildStatusMonitorAsync(CancellationToken cancellationToken)
         {
             while (!cancellationToken.IsCancellationRequested)
             {
-                IReadOnlyCollection<int> clientIds =
-                    _ipcServer.GetConnectedClientIds();
+                IReadOnlyCollection<int> clientIds = _ipcServer.GetConnectedClientIds();
 
                 foreach (int clientId in clientIds)
                 {
                     try
                     {
-                        string? status =
-                            await _ipcServer.GetStatusAsync(
-                                clientId,
-                                cancellationToken);
+                        string? status = await _ipcServer.GetStatusAsync(clientId, cancellationToken);
 
                         if (_ipcServer.TryGetClientName(clientId, out string? name))
                         {
@@ -158,72 +135,58 @@ namespace gameManager.src
                     }
                     catch (TimeoutException)
                     {
-                        Console.WriteLine(
-                            $"Child {clientId} did not respond.");
+                        Console.WriteLine($"Child {clientId} did not respond.");
                     }
-                    catch (OperationCanceledException)
-                        when (cancellationToken.IsCancellationRequested)
+                    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                     {
                         return;
                     }
                     catch (Exception exception)
                     {
-                        Console.WriteLine(
-                            $"Child {clientId} status check failed: " +
-                            exception.Message);
+                        Console.WriteLine($"Child {clientId} status check failed: " + exception.Message);
                     }
                 }
-
-                await Task.Delay(
-                    ChildStatusInterval,
-                    cancellationToken);
+                await Task.Delay(ChildStatusInterval, cancellationToken);
             }
         }
 
+        /// <summary>
+        /// Starts all children processes defined in game\{gameID}\{ReleaseType}\config\children\
+        /// </summary>
         private async Task StartChildrenAsync(CancellationToken cancellationToken)
         {
-            IReadOnlyList<ChildConfiguration> children =
-                _childConfiguration.GetChildren();
+            IReadOnlyList<ChildConfiguration> children = _childConfiguration.GetChildren();
 
             foreach (ChildConfiguration child in children)
             {
                 if (!child.Enabled)
                 {
-                    Console.WriteLine(
-                        $"Child '{child.Name}' is disabled.");
-
+                    Console.WriteLine($"Child '{child.Name}' is disabled.");
                     continue;
                 }
 
                 try
                 {
-                    await _childProcessManager.StartChildAsync(
-                        child,
-                        cancellationToken);
+                    await _childProcessManager.StartChildAsync(child, cancellationToken);
                 }
                 catch (Exception exception)
                 {
-                    Console.WriteLine(
-                        $"Failed to start child '{child.Name}':");
-
+                    Console.WriteLine($"Failed to start child '{child.Name}':");
                     Console.WriteLine(exception);
                 }
             }
         }
 
+        /// <summary>
+        /// Wait when the game's memory is loaded in Dolphin
+        /// </summary>
         private void WaitForGameInitialization()
         {
-            Console.WriteLine(
-                "Waiting for game initialization...");
+            Console.WriteLine("Waiting for game initialization...");
 
-            while (!_dolphin.IsGameRunning())
-            {
-                Thread.Sleep(500);
-            }
-
-            Console.WriteLine(
-                "Game initialized.");
-
+            while (!_dolphin.IsGameRunning()) Thread.Sleep(500);
+            
+            Console.WriteLine("Game initialized.");
             Thread.Sleep(500);
         }
 
