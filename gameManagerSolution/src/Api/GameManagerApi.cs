@@ -2,6 +2,7 @@
 using gameManager.src.Memory;
 using System.Text;
 using System.Text.Json;
+using System.Linq;
 
 namespace gameManager.src.Api
 {
@@ -36,19 +37,26 @@ namespace gameManager.src.Api
         /// </summary>
         private T ReadResource<T>(MemoryResource resource)
         {
-            if (resource.IsPointerChain) 
-                throw new NotSupportedException($"Pointer-chain resource '{resource.Name}' " + "is not supported yet.");
-
             if (resource.Length <= 0) 
                 throw new InvalidOperationException($"Resource '{resource.Name}' has an invalid length.");
             
             byte[] buffer = new byte[resource.Length];
+            int bytesRead; // einmalig deklarieren
 
-            if (!_dolphin.TryRead(resource.Address, buffer, out int bytesRead)) 
-                throw new InvalidOperationException($"Failed to read resource '{resource.Name}'.");
-            
+            if (resource.IsPointerChain)
+            {
+                // Offsets in ein Array umwandeln, damit der Aufruf typkompatibel ist
+                if (!_dolphin.TryReadPointerChain(resource.Address, buffer, resource.Offsets.ToArray(), out bytesRead))
+                    throw new InvalidOperationException($"Failed to read resource '{resource.Name}'.");
+            }
+            else
+            {
+                if (!_dolphin.TryRead(resource.Address, buffer, out bytesRead))
+                    throw new InvalidOperationException($"Failed to read resource '{resource.Name}'.");
+            }
+
             if (bytesRead != buffer.Length) 
-                throw new InvalidOperationException($"Resource '{resource.Name}' returned " + $"{bytesRead} bytes, expected {buffer.Length}.");
+                throw new InvalidOperationException($"Resource '{resource.Name}' returned {bytesRead} bytes, expected {buffer.Length}.");
             
             if (typeof(T) == typeof(string))
             {

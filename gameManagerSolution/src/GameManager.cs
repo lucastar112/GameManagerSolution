@@ -184,7 +184,8 @@ namespace gameManager.src
         {
             Console.WriteLine("Waiting for game initialization...");
 
-            while (!_dolphin.IsGameRunning()) Thread.Sleep(500);
+            while (!_dolphin.IsGameRunning()) 
+                Thread.Sleep(500);
             
             Console.WriteLine("Game initialized.");
             Thread.Sleep(500);

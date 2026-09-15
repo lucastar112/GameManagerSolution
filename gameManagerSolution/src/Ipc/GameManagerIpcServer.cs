@@ -293,6 +293,26 @@ namespace gameManager.src.Ipc
         }
 
         /// <summary>
+        /// Handles the "GetPointer" requests from the clients
+        /// </summary>
+        private async Task<IpcResponse> HandleGetPointerAsync(IpcRequest request, CancellationToken cancellationToken)
+        {
+            Console.WriteLine($"Calling GETPOINTER API for '{request.Resource}'.");
+
+            if (request.Resource is null)
+                throw new ArgumentNullException(nameof(request));
+
+            string? value = await _api.GetAsync<string>(request.Resource, cancellationToken);
+
+            return new IpcResponse
+            {
+                RequestId = request.RequestId,
+                Success = true,
+                Value = value
+            };
+        }
+
+        /// <summary>
         /// Handles the "Set" requests from the clients
         /// </summary>
         private async Task<IpcResponse> HandleSetAsync(IpcRequest request, CancellationToken cancellationToken)
@@ -343,6 +363,7 @@ namespace gameManager.src.Ipc
                     IpcOperation.SetResource => await HandleSetAsync(request, cancellationToken),
                     IpcOperation.Ping => HandlePing(request),
                     IpcOperation.Register => HandleRegister(request, clientId),
+                    IpcOperation.GetPointerChainResource => await HandleGetPointerAsync(request, cancellationToken),
                     _ => CreateErrorResponse(request, IpcErrorCodes.UnknownOperation, $"Unknown operation '{request.Operation}'.")
                 };
             }
@@ -361,9 +382,7 @@ namespace gameManager.src.Ipc
             catch (Exception exception)
             {
                 Console.WriteLine($"IPC request {request.RequestId} failed:");
-
                 Console.WriteLine(exception);
-
                 return CreateErrorResponse(request, IpcErrorCodes.InternalError, "An internal GameManager error occurred.");
             }
         }
