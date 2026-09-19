@@ -277,39 +277,30 @@ namespace gameManager.src.Ipc
         /// </summary>
         private async Task<IpcResponse> HandleGetAsync(IpcRequest request, CancellationToken cancellationToken)
         {
-            Console.WriteLine($"Calling GET API for '{request.Resource}'.");
-
-            if (request.Resource is null)
-                throw new ArgumentNullException(nameof(request));
-
-            string? value = await _api.GetAsync<string>(request.Resource, cancellationToken);
-
-            return new IpcResponse
+            try
             {
-                RequestId = request.RequestId,
-                Success = true,
-                Value = value
-            };
-        }
+                if (request.Resource is null)
+                {
+                    return CreateErrorResponse(request, IpcErrorCodes.InvalidResource, "No resource was specified.");
+                }
 
-        /// <summary>
-        /// Handles the "GetPointer" requests from the clients
-        /// </summary>
-        private async Task<IpcResponse> HandleGetPointerAsync(IpcRequest request, CancellationToken cancellationToken)
-        {
-            Console.WriteLine($"Calling GETPOINTER API for '{request.Resource}'.");
+                string? value = await _api.GetAsync<string>(request.Resource, request.PlayerId, cancellationToken);
 
-            if (request.Resource is null)
-                throw new ArgumentNullException(nameof(request));
-
-            string? value = await _api.GetAsync<string>(request.Resource, cancellationToken);
-
-            return new IpcResponse
+                return new IpcResponse
+                {
+                    RequestId = request.RequestId,
+                    Success = true,
+                    Value = value
+                };
+            }
+            catch (GameManagerIpcException exception)
             {
-                RequestId = request.RequestId,
-                Success = true,
-                Value = value
-            };
+                return CreateErrorResponse(request, exception.Code, exception.Message);
+            }
+            catch (Exception exception)
+            {
+                return CreateErrorResponse(request, IpcErrorCodes.InternalError, exception.Message);
+            }
         }
 
         /// <summary>
@@ -363,7 +354,6 @@ namespace gameManager.src.Ipc
                     IpcOperation.SetResource => await HandleSetAsync(request, cancellationToken),
                     IpcOperation.Ping => HandlePing(request),
                     IpcOperation.Register => HandleRegister(request, clientId),
-                    IpcOperation.GetPointerChainResource => await HandleGetPointerAsync(request, cancellationToken),
                     _ => CreateErrorResponse(request, IpcErrorCodes.UnknownOperation, $"Unknown operation '{request.Operation}'.")
                 };
             }
@@ -418,7 +408,6 @@ namespace gameManager.src.Ipc
             private readonly SemaphoreSlim _writeLock = new(1, 1);
             private readonly StreamWriter _writer;
             public int ClientId { get; }
-            public long NextRequestId;
 
             public ConcurrentDictionary<long, TaskCompletionSource<IpcResponse>> PendingRequests { get; } = new();
 

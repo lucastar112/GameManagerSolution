@@ -24,10 +24,10 @@ namespace gameManager.src
         /// <summary>
         /// Starts GameManager's main functionnality
         /// </summary>
-        public GameManager(Process process, MemoryResourceManager resources, ChildConfigurationManager childConfiguration)
+        public GameManager(Process process, MemoryResourceManager resources, ChildConfigurationManager childConfiguration, DynamicResourceManager dynamicResources)
         {
             _dolphin = new DolphinConnection(process);
-            _api = new GameManagerApi( _dolphin, resources);
+            _api = new GameManagerApi(_dolphin, resources, dynamicResources);
             _ipcServer = new GameManagerIpcServer(_api);
             _childProcessManager = new ChildProcessManager(_ipcServer);
             _childConfiguration = childConfiguration;
@@ -202,7 +202,7 @@ namespace gameManager.src
                 Console.WriteLine($"Dolphin: {arguments.DolphinPath}");
                 Console.WriteLine($"Game: {arguments.GamePath}");
 
-                //Loads the memory.json file for the game and configuration
+                //Loads the memory.json file
                 string memoryFile = Path.Combine("games", arguments.GameId, arguments.Configuration, "config", "memory.json");
                 MemoryResourceManager resources = new(memoryFile);
 
@@ -213,8 +213,13 @@ namespace gameManager.src
                 DolphinLauncher dolphinLauncher = new();
                 Process dolphinProcess = dolphinLauncher.Start(arguments.DolphinPath, arguments.GamePath);
 
+                // Load the dynamic cache.json file
+                string cacheFile = Path.Combine("games", arguments.GameId, arguments.Configuration, "config", "cache.json");
+                DynamicResourceManager dynamicResources = new(cacheFile);
+                dynamicResources.Load();
+
                 // Start gameManager
-                GameManager gameManager = new(dolphinProcess, resources, childConfiguration);
+                GameManager gameManager = new(dolphinProcess, resources, childConfiguration, dynamicResources);
                 gameManager.Run();
             }
 

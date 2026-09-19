@@ -1,16 +1,18 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
+﻿public sealed class MemoryResource
+{
+    public string Name { get; set; } = string.Empty;
 
-namespace gameManager.src.Memory 
-{ 
-    public sealed class MemoryResource 
-    { 
-        public string Name { get; init; } = string.Empty;
-        public IntPtr Address { get; init; } 
-        public string Type { get; init; } = string.Empty; 
-        public int Length { get; init; } 
-        public IReadOnlyList<IntPtr> Offsets { get; init; } = Array.Empty<IntPtr>(); 
-        public bool IsPointerChain => Offsets.Count > 0; 
-    } 
+    public IntPtr Address { get; set; }
+
+    public int Length { get; set; }
+
+    public string Type { get; set; } = string.Empty;
+
+    public List<nint> Offsets { get; set; } = new();
+
+    public bool IsPointerChain { get; set; }
+
+    public bool IsDynamic { get; set; }
+
+    public string? DynamicBase { get; set; }
 }

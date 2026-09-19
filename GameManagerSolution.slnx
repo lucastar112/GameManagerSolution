@@ -2,4 +2,5 @@
   <Project Path="../../GameManager.Shared/GameManager.Shared/GameManager.Shared.csproj" />
   <Project Path="../../TestConsoleClient/TestConsoleClient/TestConsoleClient.csproj" />
   <Project Path="gameManagerSolution/gameManager.csproj" />
+  <Project Path="MTW/MTW.csproj" Id="c932cfce-6df3-4b5e-bc67-60b8e5dcb8bf" />
 </Solution>

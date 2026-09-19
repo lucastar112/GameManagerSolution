@@ -31,14 +31,13 @@ namespace gameManager.src.Memory
             return _resources.TryGetValue(name, out resource);
         }
 
-        private static Dictionary<string, MemoryResource> LoadResources(
-            string json)
+        private static Dictionary<string, MemoryResource> LoadResources(string json)
         {
             using JsonDocument document = JsonDocument.Parse(json);
 
             if (!document.RootElement.TryGetProperty("resources", out JsonElement resourcesElement))
                 throw new InvalidDataException("Memory resource file does not contain a 'resources' object.");
-            
+
             Dictionary<string, MemoryResource> resources = new();
 
             foreach (JsonProperty property in resourcesElement.EnumerateObject())
@@ -46,19 +45,47 @@ namespace gameManager.src.Memory
                 string name = property.Name;
                 JsonElement definition = property.Value;
 
-                if (!definition.TryGetProperty("address", out JsonElement addressElement))
+                // ------------------------------------------------------------
+                // Dynamic
+                // ------------------------------------------------------------
+
+                bool isDynamic = false;
+
+                if (definition.TryGetProperty("dynamic", out JsonElement dynamicElement))
+                    isDynamic = dynamicElement.GetBoolean();
+
+                // ------------------------------------------------------------
+                // Address
+                // ------------------------------------------------------------
+
+                IntPtr address = IntPtr.Zero;
+
+                if (definition.TryGetProperty("address", out JsonElement addressElement))
+                {
+                    string addressString = addressElement.GetString() ?? throw new InvalidDataException($"Resource '{name}' has an invalid address.");
+                    address = ParseAddress(addressString);
+                }
+
+                // Static resources must have an address.
+                // Dynamic resources get their address from cache.json.
+                if (!isDynamic && address == IntPtr.Zero)
                     throw new InvalidDataException($"Resource '{name}' does not contain an address.");
-                
-                string addressString = addressElement.GetString()
-                    ?? throw new InvalidDataException($"Resource '{name}' has an invalid address.");
 
-                IntPtr address = ParseAddress(addressString);
+                // ------------------------------------------------------------
+                // Type
+                // ------------------------------------------------------------
 
-                string type = definition.TryGetProperty("type", out JsonElement typeElement)
-                        ? typeElement.GetString() ?? string.Empty: string.Empty;
+                string type = definition.TryGetProperty("type", out JsonElement typeElement) ? typeElement.GetString() ?? string.Empty : string.Empty;
 
-                int length = definition.TryGetProperty("length", out JsonElement lengthElement)
-                        ? lengthElement.GetInt32(): 0;
+                // ------------------------------------------------------------
+                // Length
+                // ------------------------------------------------------------
+
+                int length = definition.TryGetProperty("length", out JsonElement lengthElement) ? lengthElement.GetInt32() : 0;
+
+                // ------------------------------------------------------------
+                // Offsets
+                // ------------------------------------------------------------
 
                 List<IntPtr> offsets = new();
 
@@ -66,21 +93,39 @@ namespace gameManager.src.Memory
                 {
                     foreach (JsonElement offsetElement in offsetsElement.EnumerateArray())
                     {
-                        string offsetString = offsetElement.GetString()
-                            ?? throw new InvalidDataException($"Resource '{name}' contains an invalid offset.");
-
+                        string offsetString = offsetElement.GetString() ?? throw new InvalidDataException($"Resource '{name}' contains an invalid offset.");
                         offsets.Add(ParseAddress(offsetString));
                     }
                 }
 
-                resources.Add(name, new MemoryResource
-                    {
-                        Name = name,
-                        Address = address,
-                        Type = type,
-                        Length = length,
-                        Offsets = offsets
-                    });
+                // ------------------------------------------------------------
+                // Dynamic base
+                // ------------------------------------------------------------
+
+                string? dynamicBase = null;
+
+                if (definition.TryGetProperty("dynamicBase", out JsonElement dynamicBaseElement))
+                    dynamicBase = dynamicBaseElement.GetString();
+
+                if (isDynamic && string.IsNullOrWhiteSpace(dynamicBase))
+                    throw new InvalidDataException($"Dynamic resource '{name}' does not contain a 'dynamicBase'.");
+
+                // ------------------------------------------------------------
+                // Create resource
+                // ------------------------------------------------------------
+
+                MemoryResource resource = new()
+                {
+                    Name = name,
+                    Address = address,
+                    Type = type,
+                    Length = length,
+                    Offsets = offsets,
+                    IsDynamic = isDynamic,
+                    DynamicBase = dynamicBase
+                };
+
+                resources.Add(name, resource);
             }
 
             return resources;
@@ -90,12 +135,25 @@ namespace gameManager.src.Memory
         {
             value = value.Trim();
 
+            bool negative = false;
+
+            if (value.StartsWith("-"))
+            {
+                negative = true;
+                value = value[1..];
+            }
+            else if (value.StartsWith("+"))
+                value = value[1..];
+
             if (value.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
                 value = value[2..];
-            
-            if (!long.TryParse(value, System.Globalization.NumberStyles.HexNumber, null, out long result))
-                throw new InvalidDataException($"Invalid hexadecimal address: '{value}'.");
-            
+
+            if (!long.TryParse(value, System.Globalization.NumberStyles.HexNumber, System.Globalization.CultureInfo.InvariantCulture, out long result))
+                throw new InvalidDataException($"Invalid hexadecimal address or offset: '{(negative ? "-" : "")}{value}'.");
+
+            if (negative)
+                result = -result;
+
             return new IntPtr(result);
         }
     }
