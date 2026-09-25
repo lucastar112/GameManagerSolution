@@ -1,9 +1,11 @@
-﻿using System.ComponentModel;
+﻿using System.Buffers.Binary;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using DolphinMemory = Dolphin.Memory.Access;
+using Dolphin.Memory.Access;
 
-namespace gameManager.src.Dolphin
+namespace GameManager.Dolphin
 {
     public sealed class DolphinConnection
     {
@@ -16,6 +18,8 @@ namespace gameManager.src.Dolphin
         private const int ProcessVmOperation = 0x0008;
 
         // Windows process memory APIs
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool CloseHandle(IntPtr hObject);
         [DllImport("kernel32.dll")]
         private static extern IntPtr OpenProcess(int desiredAccess, bool inheritHandle, int processId);
 
@@ -242,8 +246,7 @@ namespace gameManager.src.Dolphin
                 return false;
             }
 
-            if (!ReadProcessMemory(_readHandle, finalHost,
-                    buffer, buffer.Length, ref bytesRead))
+            if (!ReadProcessMemory(_readHandle, finalHost, buffer, buffer.Length, ref bytesRead))
             {
                 Console.WriteLine($"TryReadPointerChainFromBase: final read failed. Win32 error = {Marshal.GetLastWin32Error()}");
                 return false;
@@ -252,6 +255,79 @@ namespace gameManager.src.Dolphin
             Console.WriteLine($"TryReadPointerChainFromBase: successfully read {bytesRead} bytes from 0x{currentAddress.ToInt64():X8}.");
 
             return bytesRead == buffer.Length;
+        }
+
+        public bool TryReadPointer(IntPtr address, int offset, out IntPtr pointer)
+        {
+            pointer = IntPtr.Zero;
+            IntPtr targetAddress = new IntPtr(address.ToInt64() + offset);
+
+            if (!_dolphin.TryGetAddress(targetAddress, out IntPtr hostAddress))
+            {
+                Console.WriteLine($"Failed to translate Dolphin address 0x{targetAddress.ToInt64():X8}.");
+                return false;
+            }
+
+            byte[] buffer = new byte[4];
+            int bytesRead = 0;
+
+            if (!ReadProcessMemory(_readHandle, hostAddress, buffer, buffer.Length, ref bytesRead))
+            {
+                Console.WriteLine($"ReadProcessMemory failed. Win32 error = {Marshal.GetLastWin32Error()}");
+                return false;
+            }
+
+            if (bytesRead != 4)
+            {
+                Console.WriteLine($"Pointer read returned {bytesRead} bytes.");
+                return false;
+            }
+
+            uint value = BinaryPrimitives.ReadUInt32BigEndian(buffer);
+
+            pointer = new IntPtr(unchecked((long)value));
+
+            Console.WriteLine($"Read pointer 0x{targetAddress.ToInt64():X8} -> 0x{pointer.ToInt64():X8}");
+
+            return pointer != IntPtr.Zero;
+        }
+
+        public bool TryReadByte(IntPtr address, out byte value)
+        {
+            value = 0;
+
+            if (!_dolphin.TryGetAddress(address, out IntPtr hostAddress))
+                return false;
+
+            byte[] buffer = new byte[1];
+            int bytesRead = 0;
+
+            if (!ReadProcessMemory( _readHandle, hostAddress, buffer, 1, ref bytesRead))
+                return false;
+
+            if (bytesRead != 1)
+                return false;
+
+            value = buffer[0];
+
+            return true;
+        }
+
+        public bool TryWriteByte(IntPtr address, byte value)
+        {
+            if (!_dolphin.TryGetAddress(address, out IntPtr hostAddress))
+                return false;
+
+            byte[] buffer = { value };
+            int bytesWritten = 0;
+
+            return WriteProcessMemory( _writeHandle, hostAddress, buffer, 1, ref bytesWritten) && bytesWritten == 1;
+        }
+
+        public void Dispose()
+        {
+            if (_readHandle != IntPtr.Zero)
+                CloseHandle(_readHandle);
         }
 
         /// <summary>

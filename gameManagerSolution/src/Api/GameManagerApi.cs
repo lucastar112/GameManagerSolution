@@ -1,4 +1,4 @@
-﻿using gameManager.src.Dolphin;
+﻿using GameManager.Dolphin;
 using gameManager.src.Memory;
 using GameManager.Shared.Ipc;
 using System.Linq;

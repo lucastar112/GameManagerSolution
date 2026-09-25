@@ -4,6 +4,7 @@ using gameManager.src.Dolphin;
 using gameManager.src.Ipc;
 using gameManager.src.Memory;
 using gameManager.src.Children;
+using GameManager.Dolphin;
 using System.Diagnostics;
 
 namespace gameManager.src
@@ -15,6 +16,7 @@ namespace gameManager.src
         private readonly GameManagerIpcServer _ipcServer;
         private readonly ChildProcessManager _childProcessManager;
         private readonly ChildConfigurationManager _childConfiguration;
+        private readonly Process _dolphinProcess;
 
 
         private static readonly TimeSpan ChildStatusInterval = TimeSpan.FromSeconds(1);
@@ -26,6 +28,7 @@ namespace gameManager.src
         /// </summary>
         public GameManager(Process process, MemoryResourceManager resources, ChildConfigurationManager childConfiguration, DynamicResourceManager dynamicResources)
         {
+            _dolphinProcess = process;
             _dolphin = new DolphinConnection(process);
             _api = new GameManagerApi(_dolphin, resources, dynamicResources);
             _ipcServer = new GameManagerIpcServer(_api);
@@ -71,6 +74,9 @@ namespace gameManager.src
         /// </summary>
         private static readonly TimeSpan HeartbeatInterval = TimeSpan.FromSeconds(1);
 
+
+
+        
         /// <summary>
         /// Sends an "Heartbeat" to the game, used for exception management ingame
         /// </summary>
@@ -167,7 +173,7 @@ namespace gameManager.src
 
                 try
                 {
-                    await _childProcessManager.StartChildAsync(child, cancellationToken);
+                    await _childProcessManager.StartChildAsync(child, _dolphinProcess, cancellationToken);
                 }
                 catch (Exception exception)
                 {
@@ -211,7 +217,7 @@ namespace gameManager.src
 
                 // Launch Dolphin with the game
                 DolphinLauncher dolphinLauncher = new();
-                Process dolphinProcess = dolphinLauncher.Start(arguments.DolphinPath, arguments.GamePath);
+                Process _dolphinProcess = dolphinLauncher.Start(arguments.DolphinPath, arguments.GamePath);
 
                 // Load the dynamic cache.json file
                 string cacheFile = Path.Combine("games", arguments.GameId, arguments.Configuration, "config", "cache.json");
@@ -219,7 +225,7 @@ namespace gameManager.src
                 dynamicResources.Load();
 
                 // Start gameManager
-                GameManager gameManager = new(dolphinProcess, resources, childConfiguration, dynamicResources);
+                GameManager gameManager = new(_dolphinProcess, resources, childConfiguration, dynamicResources);
                 gameManager.Run();
             }
 

@@ -1,4 +1,4 @@
-﻿using MTW.src.Dolphin;
+﻿using GameManager.Dolphin;
 
 namespace MTW.Memory
 {
