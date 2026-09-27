@@ -3,7 +3,6 @@ using MTW.Memory;
 using MTW.Race;
 using GameManager.Dolphin;
 using System.Diagnostics;
-using Dolphin.Memory.Access;
 
 namespace MTW
 {
@@ -51,7 +50,7 @@ namespace MTW
 
             PlayerPointerResolver resolver = new PlayerPointerResolver(dolphin);
 
-            DynamicCacheWriter cacheWriter = new DynamicCacheWriter(Path.Combine( "..", "..", "config", "cache.json"));
+            DynamicCacheWriter cacheWriter = new DynamicCacheWriter(Path.Combine("games", "MTW", "DEV", "config", "cache.json"));
 
             CacheBuildController cacheBuildController = new CacheBuildController(dolphin, resolver, cacheWriter);
             cacheBuildController.Run(CancellationToken.None);
