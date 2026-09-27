@@ -73,8 +73,9 @@ namespace gameManager.src.Ipc
                 throw new InvalidOperationException($"Client {clientId} is not connected.");
 
             long requestId = Interlocked.Increment(ref _nextRequestId);
-            IpcChildRequest request = new() 
+            IpcChildRequest request = new()
             {
+                MessageType = IpcMessageType.ChildRequest,
                 RequestId = requestId,
                 Operation = IpcOperation.GetStatus
             };
@@ -156,30 +157,77 @@ namespace gameManager.src.Ipc
 
                         if (string.IsNullOrWhiteSpace(json))
                             continue;
-                        
+
                         // Useful for debugging, but may produce a lot of output in production. Uncomment the following line if you want to log received messages.
                         //Console.WriteLine($"IPC {clientId}: received: {json}");
 
-                        if (IsResponse(json))
+                        IpcMessageType? messageType;
+
+                        try
                         {
-                            HandleChildResponse(client, json);
+                            using JsonDocument document = JsonDocument.Parse(json);
+
+                            if (!document.RootElement.TryGetProperty(
+                                    "MessageType",
+                                    out JsonElement messageTypeElement))
+                            {
+                                Console.WriteLine(
+                                    $"IPC client {clientId}: message has no MessageType.");
+
+                                continue;
+                            }
+
+                            messageType =
+                                messageTypeElement.Deserialize<IpcMessageType>(JsonOptions);
+                        }
+                        catch (JsonException exception)
+                        {
+                            Console.WriteLine(
+                                $"IPC client {clientId}: invalid IPC message.");
+
+                            Console.WriteLine(exception);
+
                             continue;
+                        }
+
+                        switch (messageType)
+                        {
+                            case IpcMessageType.Response:
+                                HandleChildResponse(client, json);
+                                continue;
+
+                            case IpcMessageType.Request:
+                                break;
+
+                            case IpcMessageType.ChildRequest:
+                                Console.WriteLine(
+                                    $"IPC client {clientId}: unexpected ChildRequest from child.");
+
+                                continue;
+
+                            default:
+                                Console.WriteLine(
+                                    $"IPC client {clientId}: unexpected message type '{messageType}'.");
+
+                                continue;
                         }
 
                         IpcRequest? request;
 
                         try
                         {
-                            request = JsonSerializer.Deserialize<IpcRequest>(json, JsonOptions);
+                            request = JsonSerializer.Deserialize<IpcRequest>(
+                                json,
+                                JsonOptions);
                         }
                         catch (JsonException exception)
                         {
                             Console.WriteLine($"IPC {clientId}: invalid JSON request.");
-
                             Console.WriteLine(exception);
 
                             IpcResponse response = new()
                             {
+                                MessageType = IpcMessageType.Response,
                                 RequestId = 0,
                                 Success = false,
                                 Error = new IpcError
@@ -189,7 +237,10 @@ namespace gameManager.src.Ipc
                                 }
                             };
 
-                            await client.WriteAsync(JsonSerializer.Serialize(response, JsonOptions), cancellationToken);
+                            await client.WriteAsync(
+                                JsonSerializer.Serialize(response, JsonOptions),
+                                cancellationToken);
+
                             continue;
                         }
 
@@ -231,25 +282,6 @@ namespace gameManager.src.Ipc
         }
 
         /// <summary>
-        /// Handles sending the response to the client
-        /// </summary>
-        private static bool IsResponse(string json)
-        {
-            try
-            {
-                using JsonDocument document = JsonDocument.Parse(json);
-
-                JsonElement root = document.RootElement;
-
-                return root.TryGetProperty("Success", out _) || root.TryGetProperty("success", out _);
-            }
-            catch (JsonException)
-            {
-                return false;
-            }
-        }
-
-        /// <summary>
         /// Handles to response to the correct client
         /// </summary>
         private static void HandleChildResponse(ClientConnection client, string json)
@@ -284,10 +316,14 @@ namespace gameManager.src.Ipc
                     return CreateErrorResponse(request, IpcErrorCodes.InvalidResource, "No resource was specified.");
                 }
 
-                string? value = await _api.GetAsync<string>(request.Resource, request.PlayerId, cancellationToken);
+                object? value = await _api.GetResourceAsync(request.Resource, request.PlayerId, cancellationToken);
+
+                // Useful for debugging, but may produce a lot of output in production. Uncomment the following line if you want to log the value type.
+                // Console.WriteLine($"IPC Value type: {value?.GetType().FullName ?? "null"}");
 
                 return new IpcResponse
                 {
+                    MessageType = IpcMessageType.Response,
                     RequestId = request.RequestId,
                     Success = true,
                     Value = value
@@ -299,6 +335,8 @@ namespace gameManager.src.Ipc
             }
             catch (Exception exception)
             {
+                Console.WriteLine($"GET '{request.Resource}' failed:");
+                Console.WriteLine(exception);
                 return CreateErrorResponse(request, IpcErrorCodes.InternalError, exception.Message);
             }
         }
@@ -334,6 +372,7 @@ namespace gameManager.src.Ipc
 
             return new IpcResponse
             {
+                MessageType = IpcMessageType.Response,
                 RequestId = request.RequestId,
                 Success = true
             };
@@ -381,6 +420,7 @@ namespace gameManager.src.Ipc
         {
             return new IpcResponse
             {
+                MessageType = IpcMessageType.Response,
                 RequestId = request.RequestId,
                 Success = false,
                 Value = null,
@@ -396,6 +436,7 @@ namespace gameManager.src.Ipc
         {
             return new IpcResponse
             {
+                MessageType = IpcMessageType.Response,
                 RequestId = request.RequestId,
                 Success = true,
                 Value = "PONG",
@@ -424,17 +465,39 @@ namespace gameManager.src.Ipc
             /// <summary>
             /// Handles write semiphores
             /// </summary>
-            public async Task WriteAsync(string message, CancellationToken cancellationToken)
+            public async Task WriteAsync(
+    string message,
+    CancellationToken cancellationToken)
             {
-                await _writeLock.WaitAsync(cancellationToken);
+                if (_writer is null)
+                {
+                    throw new InvalidOperationException(
+                        "GameManager client is not connected.");
+                }
+
+                Console.WriteLine("[GameManagerClient] Waiting for write lock...");
+
+                await _writeLock.WaitAsync(
+                    cancellationToken);
+
+                Console.WriteLine("[GameManagerClient] Write lock acquired.");
 
                 try
                 {
+                    Console.WriteLine(
+                        $"[GameManagerClient] Sending: {message}");
+
                     await _writer.WriteLineAsync(message);
+
+                    Console.WriteLine(
+                        "[GameManagerClient] Message sent.");
                 }
                 finally
                 {
                     _writeLock.Release();
+
+                    Console.WriteLine(
+                        "[GameManagerClient] Write lock released.");
                 }
             }
 
@@ -497,6 +560,7 @@ namespace gameManager.src.Ipc
 
             return new IpcResponse
             {
+                MessageType = IpcMessageType.Response,
                 RequestId = request.RequestId,
                 Success = true,
                 Value = name

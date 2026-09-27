@@ -111,6 +111,22 @@ namespace gameManager.src.Memory
                     throw new InvalidDataException($"Dynamic resource '{name}' does not contain a 'dynamicBase'.");
 
                 // ------------------------------------------------------------
+                // Availability
+                // ------------------------------------------------------------
+
+                ResourceAvailability availability = ResourceAvailability.Always;
+
+                if (definition.TryGetProperty("availability", out JsonElement availabilityElement))
+                {
+                    byte availabilityValue = availabilityElement.GetByte();
+
+                    if (!Enum.IsDefined(typeof(ResourceAvailability), availabilityValue))
+                        throw new InvalidDataException($"Resource '{name}' has an invalid availability value: {availabilityValue}.");
+
+                    availability = (ResourceAvailability)availabilityValue;
+                }
+
+                // ------------------------------------------------------------
                 // Create resource
                 // ------------------------------------------------------------
 
@@ -122,7 +138,8 @@ namespace gameManager.src.Memory
                     Length = length,
                     Offsets = offsets,
                     IsDynamic = isDynamic,
-                    DynamicBase = dynamicBase
+                    DynamicBase = dynamicBase,
+                    Availability = availability
                 };
 
                 resources.Add(name, resource);

@@ -12,26 +12,30 @@ namespace gameManager.src.Api
         private readonly DolphinConnection _dolphin;
         private readonly DynamicResourceManager _dynamicResources;
         private readonly MemoryResourceManager _resources;
+        private readonly ResourceAvailabilityManager _availabilityManager;
 
         /// <summary>
         /// Stores dolphin data
         /// </summary>
-        public GameManagerApi(DolphinConnection dolphin, MemoryResourceManager resources, DynamicResourceManager dynamicResources)
+        public GameManagerApi(DolphinConnection dolphin, MemoryResourceManager resources, DynamicResourceManager dynamicResources, ResourceAvailabilityManager availabilityManager)
         {
             _dolphin = dolphin;
             _resources = resources;
             _dynamicResources = dynamicResources;
+            _availabilityManager = availabilityManager;
         }
 
         /// <summary>
         /// Get a ressource from the game
         /// </summary>
-        public Task<T?> GetAsync<T>(string resource, int? playerId = null, CancellationToken cancellationToken = default)
+        public async Task<T?> GetAsync<T>(string resource, int? playerId = null, CancellationToken cancellationToken = default)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            MemoryResource definition = _resources.Get(resource);
-            object? value = ReadResource<T>(definition, playerId);
-            return Task.FromResult((T?)value);
+            object? value = await GetResourceAsync(resource, playerId, cancellationToken);
+
+            if (value is null)
+                return default;
+
+            return (T)value;
         }
 
 
@@ -47,9 +51,7 @@ namespace gameManager.src.Api
             int bytesRead;
 
             if (resource.IsDynamic)
-            {
                 bytesRead = ReadDynamicResource(resource, playerId, buffer);
-            }
             else if (resource.IsPointerChain)
             {
                 if (!_dolphin.TryReadPointerChain(resource.Address, buffer, resource.Offsets, out bytesRead))
@@ -62,8 +64,15 @@ namespace gameManager.src.Api
             }
 
             if (bytesRead != buffer.Length)
+            {
                 throw new InvalidOperationException($"Resource '{resource.Name}' returned {bytesRead} bytes, expected {buffer.Length}.");
+            }
 
+            // Raw byte data
+            if (typeof(T) == typeof(byte[]))
+                return (T)(object)buffer;
+
+            // ASCII string
             if (typeof(T) == typeof(string))
             {
                 string value = Encoding.ASCII.GetString(buffer);
@@ -72,6 +81,7 @@ namespace gameManager.src.Api
 
             throw new NotSupportedException($"Type '{typeof(T).Name}' is not supported yet.");
         }
+
 
         private int ReadDynamicResource(MemoryResource resource, int? playerId, byte[] buffer)
         {
@@ -96,7 +106,11 @@ namespace gameManager.src.Api
         public Task SetAsync(string resource, object value, CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
+
             MemoryResource definition = _resources.Get(resource);
+            if (!_availabilityManager.IsAvailable(definition))
+                throw new GameManagerIpcException(IpcErrorCodes.ResourceUnavailable, $"Resource '{resource}' is currently unavailable.");
+
             byte[] buffer = ConvertValue(value);
 
             if (buffer.Length != definition.Length) 
@@ -136,18 +150,53 @@ namespace gameManager.src.Api
             throw new NotSupportedException($"Type '{value.GetType().Name}' is not supported yet.");
         }
 
-        /*private IntPtr ResolveResourceAddress(MemoryResource resource, int? playerId)
+        public Task<object?> GetResourceAsync(string resource, int? playerId = null, CancellationToken cancellationToken = default)
         {
-            if (!resource.RequiresContext)
-                return resource.Address;
+            cancellationToken.ThrowIfCancellationRequested();
 
-            if (playerId is null)
-                throw new InvalidOperationException(
-                    $"Resource '{resource.Name}' requires a player ID.");
+            MemoryResource definition = _resources.Get(resource);
 
-            return _dynamicResources.Resolve(
-                resource.Name,
-                playerId.Value);
-        }*/
+            if (!_availabilityManager.IsAvailable(definition))
+            {
+                throw new GameManagerIpcException(
+                    IpcErrorCodes.ResourceUnavailable,
+                    $"Resource '{resource}' is currently unavailable."
+                );
+            }
+
+            return Task.FromResult(ReadResourceValue(definition, playerId));
+        }
+
+        private object ReadResourceValue(MemoryResource resource, int? playerId)
+        {
+            if (resource.Length <= 0)
+                throw new InvalidOperationException($"Resource '{resource.Name}' has an invalid length.");
+
+            byte[] buffer = new byte[resource.Length];
+            int bytesRead;
+
+            if (resource.IsDynamic)
+                bytesRead = ReadDynamicResource(resource, playerId, buffer);
+            else if (resource.IsPointerChain)
+            {
+                if (!_dolphin.TryReadPointerChain(resource.Address,  buffer, resource.Offsets, out bytesRead))
+                    throw new InvalidOperationException($"Failed to read resource '{resource.Name}'.");
+            }
+            else
+            {
+                if (!_dolphin.TryRead(resource.Address, buffer, out bytesRead))
+                    throw new InvalidOperationException($"Failed to read resource '{resource.Name}'.");
+            }
+
+            if (bytesRead != buffer.Length)
+                throw new InvalidOperationException($"Resource '{resource.Name}' returned {bytesRead} bytes, expected {buffer.Length}.");
+
+            return resource.Type switch
+            {
+                "uint8" => buffer,
+                "string" => Encoding.ASCII.GetString(buffer),
+                _ => throw new NotSupportedException($"Resource type '{resource.Type}' is not supported yet.")
+            };
+        }
     }
 }

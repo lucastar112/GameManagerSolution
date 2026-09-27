@@ -1,4 +1,6 @@
-﻿public sealed class MemoryResource
+﻿using gameManager.src.Memory;
+
+public sealed class MemoryResource
 {
     public string Name { get; set; } = string.Empty;
 
@@ -15,4 +17,5 @@
     public bool IsDynamic { get; set; }
 
     public string? DynamicBase { get; set; }
+    public ResourceAvailability Availability { get; init; }
 }

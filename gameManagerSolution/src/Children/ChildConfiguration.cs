@@ -11,5 +11,6 @@
         public string Arguments { get; set; } = string.Empty;
         public List<ChildConfiguration> Children { get; set; } = new();
         public bool UseIpc { get; set; }
+        public bool Required { get; init; }
     }
 }

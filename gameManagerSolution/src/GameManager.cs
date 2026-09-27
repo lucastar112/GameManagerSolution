@@ -20,8 +20,8 @@ namespace gameManager.src
 
 
         private static readonly TimeSpan ChildStatusInterval = TimeSpan.FromSeconds(1);
-
-        private static readonly TimeSpan ChildStatusTimeout = TimeSpan.FromMilliseconds(500);
+        private readonly GameStateManager _gameStateManager;
+        private readonly ResourceAvailabilityManager _availabilityManager;
 
         /// <summary>
         /// Starts GameManager's main functionnality
@@ -30,7 +30,9 @@ namespace gameManager.src
         {
             _dolphinProcess = process;
             _dolphin = new DolphinConnection(process);
-            _api = new GameManagerApi(_dolphin, resources, dynamicResources);
+            _gameStateManager = new GameStateManager(_dolphin);
+            _availabilityManager = new ResourceAvailabilityManager(_gameStateManager);
+            _api = new GameManagerApi(_dolphin, resources, dynamicResources, _availabilityManager);
             _ipcServer = new GameManagerIpcServer(_api);
             _childProcessManager = new ChildProcessManager(_ipcServer);
             _childConfiguration = childConfiguration;

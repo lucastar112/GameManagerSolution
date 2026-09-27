@@ -31,8 +31,8 @@ namespace gameManager.src.Children
             {
                 FileName = configuration.Path,
                 Arguments = arguments,
-                UseShellExecute = false,
-                CreateNoWindow = false
+                UseShellExecute = true,
+                CreateNoWindow = true
             };
 
             Process process = Process.Start(startInfo) ?? throw new InvalidOperationException($"Failed to start child '{configuration.Name}'.");

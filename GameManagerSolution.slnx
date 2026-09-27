@@ -3,6 +3,7 @@
   <Project Path="../../TestConsoleClient/TestConsoleClient/TestConsoleClient.csproj">
     <Build Solution="Release|*" Project="false" />
   </Project>
+  <Project Path="DebugManager/Debug.csproj" Id="1e51d500-f181-45a2-b7bc-491903c026f6" />
   <Project Path="GameManager.Dolphin/GameManager.Dolphin.csproj" Id="367c2b43-619b-4f39-a817-61560e290b27" />
   <Project Path="gameManagerSolution/gameManager.csproj" />
   <Project Path="MTW/MTW.csproj" Id="c932cfce-6df3-4b5e-bc67-60b8e5dcb8bf" />
