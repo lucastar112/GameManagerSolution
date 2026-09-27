@@ -79,7 +79,7 @@ public sealed class RaceDataService
             Console.WriteLine("[RaceData] Requesting PlayersId...");
 
             // See (Mod)CharacterDatabase for the mapping of IDs to definitions
-            JsonElement playersValue = await _gameManager.GetAsync<JsonElement>("PlayersId", cancellationToken: cancellationToken);
+            JsonElement playersValue = await _gameManager.GetPlayersIdAsync(cancellationToken: cancellationToken);
 
             if (playersValue.ValueKind != JsonValueKind.String)
             {
@@ -116,7 +116,7 @@ public sealed class RaceDataService
             Console.WriteLine("[RaceData] Requesting VehiclesId...");
 
             // See VehicleDatabase for the mapping of IDs to definitions
-            JsonElement vehiclesValue = await _gameManager.GetAsync<JsonElement>("VehiclesId", cancellationToken: cancellationToken);
+            JsonElement vehiclesValue = await _gameManager.GetVehiclesIdAsync(cancellationToken: cancellationToken);
 
             if (vehiclesValue.ValueKind != JsonValueKind.String)
             {

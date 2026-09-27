@@ -1,4 +1,5 @@
 ﻿using GameManager.Shared.Client;
+using System.Text.Json;
 
 namespace DebugManager.Services;
 
@@ -18,14 +19,14 @@ public sealed class GameManagerConnection : IAsyncDisposable
         return _client.GetAsync<T>(resource, playerId, cancellationToken);
     }
 
-    public Task<byte[]> GetPlayersIdAsync(CancellationToken cancellationToken = default)
+    public Task<JsonElement> GetPlayersIdAsync(CancellationToken cancellationToken = default)
     {
-        return _client.GetAsync<byte[]>("PlayersId", cancellationToken: cancellationToken);
+        return _client.GetAsync<JsonElement>("PlayersId", cancellationToken: cancellationToken);
     }
 
-    public Task<byte[]> GetVehiclesIdAsync(CancellationToken cancellationToken = default)
+    public Task<JsonElement> GetVehiclesIdAsync(CancellationToken cancellationToken = default)
     {
-        return _client.GetAsync<byte[]>("VehiclesId", cancellationToken: cancellationToken);
+        return _client.GetAsync<JsonElement>("VehiclesId", cancellationToken: cancellationToken);
     }
 
     public ValueTask DisposeAsync()
