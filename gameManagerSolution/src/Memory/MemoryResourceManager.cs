@@ -4,13 +4,13 @@ namespace gameManager.src.Memory
 {
     public sealed class MemoryResourceManager
     {
-        private readonly Dictionary<string, MemoryResource> _resources;
+        private readonly Dictionary<string, MemoryResource> _resources
+
+
         public MemoryResourceManager(string filePath)
         {
             if (!File.Exists(filePath))
-            {
                 throw new FileNotFoundException("Memory resource file was not found.", filePath);
-            }
 
             string json = File.ReadAllText(filePath);
             _resources = LoadResources(json);
@@ -19,16 +19,9 @@ namespace gameManager.src.Memory
         public MemoryResource Get(string name)
         {
             if (!_resources.TryGetValue(name, out MemoryResource? resource))
-            {
                 throw new KeyNotFoundException($"Memory resource '{name}' was not found.");
-            }
 
             return resource;
-        }
-
-        public bool TryGet(string name, out MemoryResource? resource)
-        {
-            return _resources.TryGetValue(name, out resource);
         }
 
         private static Dictionary<string, MemoryResource> LoadResources(string json)

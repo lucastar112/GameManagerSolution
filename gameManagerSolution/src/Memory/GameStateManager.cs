@@ -19,19 +19,12 @@ public sealed class GameStateManager
 
         if (!_dolphin.TryReadByte(GameStateAddress, out byte value))
         {
-            Console.WriteLine(
-                $"[GameState] Failed to read 0x{GameStateAddress.ToInt64():X8}"
-            );
-
+            Console.WriteLine($"[GameState] Failed to read 0x{GameStateAddress.ToInt64():X8}");
             return false;
         }
 
         state = (GameState)value;
-
-        Console.WriteLine(
-            $"[GameState] Raw=0x{value:X2}, State={state}"
-        );
-
+        Console.WriteLine($"[GameState] Raw=0x{value:X2}, State={state}");
         return true;
     }
 

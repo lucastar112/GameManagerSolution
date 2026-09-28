@@ -109,6 +109,58 @@ public sealed class RaceDataService
 
             Console.WriteLine($"[RaceData] PlayersId received: {playersBase64}");
 
+
+
+            Console.WriteLine("[RaceData] Requesting TeamsId...");
+
+            // Methode liefert List<Task<JsonElement>>
+            List<Task<JsonElement>> teamsTasks = _gameManager.GetAllPlayersTeamIdAsync(12, cancellationToken: cancellationToken);
+
+            // Wait for task to complet
+            JsonElement[] teamsResults;
+            try
+            {
+                teamsResults = await Task.WhenAll(teamsTasks);
+            }
+            catch (Exception exception)
+            {
+                Console.WriteLine($"[RaceData] Failed to get TeamsId tasks: {exception.Message}");
+                return new List<RacePlayer>();
+            }
+
+            // Combine data to Byte arrays
+            List<byte> teamIdsList = new List<byte>();
+
+            foreach (var teamId in teamsResults)
+            {
+                if (teamId.ValueKind != JsonValueKind.String)
+                {
+                    Console.WriteLine($"[RaceData] One of TeamsId elements has invalid type: {teamId.ValueKind}");
+                    continue;
+                }
+
+                string? base64 = teamId.GetString();
+                if (string.IsNullOrEmpty(base64))
+                {
+                    Console.WriteLine("[RaceData] One of TeamsId elements is empty.");
+                    continue;
+                }
+
+                try
+                {
+                    byte[] part = Convert.FromBase64String(base64);
+                    teamIdsList.AddRange(part);
+                }
+                catch (FormatException)
+                {
+                    Console.WriteLine("[RaceData] One of TeamsId elements is not valid Base64.");
+                    continue;
+                }
+            }
+
+            byte[] teamIds = teamIdsList.ToArray();
+            Console.WriteLine($"[RaceData] TeamsId received: length={teamIds.Length}");
+
             // ---------------------------------------------------------
             // Vehicles
             // ---------------------------------------------------------

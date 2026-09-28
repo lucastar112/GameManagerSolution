@@ -63,7 +63,7 @@
                                 Height="230"
                                 Margin="10"
                                 Padding="15"
-                                Background="#303030"
+                                Background="{Binding TeamColor}"
                                 CornerRadius="10">
 
                             <Grid>

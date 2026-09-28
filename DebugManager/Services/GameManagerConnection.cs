@@ -6,6 +6,7 @@ namespace DebugManager.Services;
 public sealed class GameManagerConnection : IAsyncDisposable
 {
     private readonly GameManagerClient _client = new();
+    private List<Task<JsonElement>> _dataHolder = [];
 
     public async Task ConnectAsync(CancellationToken cancellationToken = default)
     {
@@ -22,6 +23,16 @@ public sealed class GameManagerConnection : IAsyncDisposable
     public Task<JsonElement> GetPlayersIdAsync(CancellationToken cancellationToken = default)
     {
         return _client.GetAsync<JsonElement>("PlayersId", cancellationToken: cancellationToken);
+    }
+
+    public List<Task<JsonElement>> GetAllPlayersTeamIdAsync(int numberInteration, CancellationToken cancellationToken = default)
+    {
+        _dataHolder.Clear();
+
+        for (int i = 0; i < numberInteration; i++)
+            _dataHolder.Add(_client.GetAsync<JsonElement>("TeamId", playerId:i, cancellationToken: cancellationToken));
+
+        return _dataHolder;
     }
 
     public Task<JsonElement> GetVehiclesIdAsync(CancellationToken cancellationToken = default)

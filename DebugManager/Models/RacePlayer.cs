@@ -16,6 +16,7 @@ public sealed class RacePlayer
 
     public string MaxSpeedText => "Max Speed: --";
     public string CurrentSpeedText => "Current Speed: --";
+    public string TeamColor => "#303030";
 
     public ImageSource? CharacterImage { get; init; }
     public ImageSource? VehicleImage { get; init; }
