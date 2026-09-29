@@ -4,7 +4,7 @@ namespace gameManager.src.Memory
 {
     public sealed class MemoryResourceManager
     {
-        private readonly Dictionary<string, MemoryResource> _resources
+        private readonly Dictionary<string, MemoryResource> _resources;
 
 
         public MemoryResourceManager(string filePath)

@@ -7,6 +7,10 @@ namespace gameManager.src.Dolphin
         /// <summary>
         /// Start's a new Dolphin process
         /// </summary>
+        /// <param name="dolphinPath"></param>
+        /// <param name="gamePath"></param>
+        /// <returns></returns>
+        /// <exception cref="InvalidOperationException"></exception>
         public Process Start(string dolphinPath, string gamePath)
         {
             StopExistingDolphinProcesses();

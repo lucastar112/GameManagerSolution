@@ -8,6 +8,9 @@ using System.Text.Json.Serialization;
 
 namespace gameManager.src.Ipc
 {
+    /// <summary>
+    /// Handles IPC Connection to GameManager
+    /// </summary>
     public sealed class GameManagerIpcServer
     {
         private const string PipeName = "GameManager";
@@ -21,11 +24,16 @@ namespace gameManager.src.Ipc
         private readonly ConcurrentDictionary<int, string> _clientNames = new();
         private readonly ConcurrentDictionary<int, ClientConnection> _clients = new();
 
+        /// <summary>
+        /// Returns the keys to all clients connected
+        /// </summary>
+        /// <returns></returns>
         public IReadOnlyCollection<int> GetConnectedClientIds()
         {
             return _clients.Keys.ToArray();
         }
         
+
         private static readonly JsonSerializerOptions JsonOptions = new()
         {
             Converters = {new JsonStringEnumConverter()}
@@ -39,6 +47,8 @@ namespace gameManager.src.Ipc
         /// <summary>
         /// Run IPC server
         /// </summary>
+        /// <param name="cancellationToken"></param>
+        /// <returns></returns>
         public async Task RunAsync(CancellationToken cancellationToken = default)
         {
             Console.WriteLine($"IPC server listening on '{PipeName}'.");
@@ -67,6 +77,11 @@ namespace gameManager.src.Ipc
         /// <summary>
         /// Get client "heartbeat"
         /// </summary>
+        /// <param name="clientId"></param>
+        /// <param name="cancellationToken"></param>
+        /// <returns></returns>
+        /// <exception cref="InvalidOperationException"></exception>
+        /// <exception cref="GameManagerIpcException"></exception>
         public async Task<string?> GetStatusAsync(int clientId, CancellationToken cancellationToken = default)
         {
             if (!_clients.TryGetValue(clientId, out ClientConnection? client))
@@ -101,6 +116,10 @@ namespace gameManager.src.Ipc
         /// <summary>
         /// Handle if an exception occures
         /// </summary>
+        /// <param name="pipe"></param>
+        /// <param name="clientId"></param>
+        /// <param name="cancellationToken"></param>
+        /// <returns></returns>
         private async Task HandleClientSafelyAsync(NamedPipeServerStream pipe, int clientId, CancellationToken cancellationToken)
         {
             try
@@ -117,6 +136,10 @@ namespace gameManager.src.Ipc
         /// <summary>
         /// Handles client connexion
         /// </summary>
+        /// <param name="pipe"></param>
+        /// <param name="clientId"></param>
+        /// <param name="cancellationToken"></param>
+        /// <returns></returns>
         private async Task HandleClientAsync(NamedPipeServerStream pipe, int clientId, CancellationToken cancellationToken)
         {
             await using (pipe)
@@ -284,6 +307,8 @@ namespace gameManager.src.Ipc
         /// <summary>
         /// Handles to response to the correct client
         /// </summary>
+        /// <param name="client"></param>
+        /// <param name="json"></param>
         private static void HandleChildResponse(ClientConnection client, string json)
         {
             IpcResponse? response = JsonSerializer.Deserialize<IpcResponse>(json, JsonOptions);
@@ -307,6 +332,9 @@ namespace gameManager.src.Ipc
         /// <summary>
         /// Handles the "Get" requests from the clients
         /// </summary>
+        /// <param name="request"></param>
+        /// <param name="cancellationToken"></param>
+        /// <returns></returns>
         private async Task<IpcResponse> HandleGetAsync(IpcRequest request, CancellationToken cancellationToken)
         {
             try
@@ -344,6 +372,10 @@ namespace gameManager.src.Ipc
         /// <summary>
         /// Handles the "Set" requests from the clients
         /// </summary>
+        /// <param name="request"></param>
+        /// <param name="cancellationToken"></param>
+        /// <returns></returns>
+        /// <exception cref="ArgumentNullException"></exception>
         private async Task<IpcResponse> HandleSetAsync(IpcRequest request, CancellationToken cancellationToken)
         {
             Console.WriteLine($"Calling SET API for '{request.Resource}'.");
@@ -381,6 +413,10 @@ namespace gameManager.src.Ipc
         /// <summary>
         /// Handles the different types of request send by the clients
         /// </summary>
+        /// <param name="request"></param>
+        /// <param name="clientId"></param>
+        /// <param name="cancellationToken"></param>
+        /// <returns></returns>
         private async Task<IpcResponse> HandleRequestAsync(IpcRequest request, int clientId, CancellationToken cancellationToken)
         {
             try
@@ -416,6 +452,13 @@ namespace gameManager.src.Ipc
             }
         }
 
+        /// <summary>
+        /// Create error to send to the child
+        /// </summary>
+        /// <param name="request"></param>
+        /// <param name="code"></param>
+        /// <param name="message"></param>
+        /// <returns></returns>
         private static IpcResponse CreateErrorResponse(IpcRequest request, string code, string message)
         {
             return new IpcResponse
@@ -432,6 +475,11 @@ namespace gameManager.src.Ipc
             };
         }
 
+        /// <summary>
+        /// Test if child is alive
+        /// </summary>
+        /// <param name="request"></param>
+        /// <returns></returns>
         private static IpcResponse HandlePing(IpcRequest request)
         {
             return new IpcResponse
@@ -452,6 +500,11 @@ namespace gameManager.src.Ipc
 
             public ConcurrentDictionary<long, TaskCompletionSource<IpcResponse>> PendingRequests { get; } = new();
 
+            /// <summary>
+            /// Connects to client
+            /// </summary>
+            /// <param name="clientId"></param>
+            /// <param name="pipe"></param>
             public ClientConnection(int clientId, Stream pipe)
             {
                 ClientId = clientId;
@@ -463,46 +516,44 @@ namespace gameManager.src.Ipc
             }
 
             /// <summary>
-            /// Handles write semiphores
+            /// Handles write lock for IPC messages
             /// </summary>
-            public async Task WriteAsync(
-    string message,
-    CancellationToken cancellationToken)
+            /// <param name="message"></param>
+            /// <param name="cancellationToken"></param>
+            /// <returns></returns>
+            /// <exception cref="InvalidOperationException"></exception>
+            public async Task WriteAsync(string message, CancellationToken cancellationToken)
             {
                 if (_writer is null)
                 {
-                    throw new InvalidOperationException(
-                        "GameManager client is not connected.");
+                    throw new InvalidOperationException("GameManager client is not connected.");
                 }
 
                 Console.WriteLine("[GameManagerClient] Waiting for write lock...");
-
-                await _writeLock.WaitAsync(
-                    cancellationToken);
-
+                await _writeLock.WaitAsync(cancellationToken);
                 Console.WriteLine("[GameManagerClient] Write lock acquired.");
 
                 try
                 {
-                    Console.WriteLine(
-                        $"[GameManagerClient] Sending: {message}");
-
+                    Console.WriteLine($"[GameManagerClient] Sending: {message}");
                     await _writer.WriteLineAsync(message);
-
-                    Console.WriteLine(
-                        "[GameManagerClient] Message sent.");
+                    Console.WriteLine("[GameManagerClient] Message sent.");
                 }
                 finally
                 {
                     _writeLock.Release();
-
-                    Console.WriteLine(
-                        "[GameManagerClient] Write lock released.");
+                    Console.WriteLine("[GameManagerClient] Write lock released.");
                 }
             }
 
         }
 
+        /// <summary>
+        /// Wait until client is connected
+        /// </summary>
+        /// <param name="cancellationToken"></param>
+        /// <returns></returns>
+        /// <exception cref="InvalidOperationException"></exception>
         public async Task<int> WaitForClientAsync(CancellationToken cancellationToken = default)
         {
             await _clientConnectedSignal.WaitAsync(cancellationToken);
@@ -524,6 +575,9 @@ namespace gameManager.src.Ipc
         /// <summary>
         /// Rturns client ID
         /// </summary>
+        /// <param name="clientId"></param>
+        /// <param name="name"></param>
+        /// <returns></returns>
         public bool TryGetClientName(int clientId, out string? name)
         {
             return _clientNames.TryGetValue(clientId, out name);
@@ -532,6 +586,7 @@ namespace gameManager.src.Ipc
         /// <summary>
         /// Returns a list of registrered clients
         /// </summary>
+        /// <returns></returns>
         public IReadOnlyDictionary<int, string> GetRegisteredClients()
         {
             return new Dictionary<int, string>(_clientNames);
@@ -540,6 +595,9 @@ namespace gameManager.src.Ipc
         /// <summary>
         /// Handles the child's registration
         /// </summary>
+        /// <param name="request"></param>
+        /// <param name="clientId"></param>
+        /// <returns></returns>
         private IpcResponse HandleRegister(IpcRequest request, int clientId)
         {
             if (request.Value is null)
