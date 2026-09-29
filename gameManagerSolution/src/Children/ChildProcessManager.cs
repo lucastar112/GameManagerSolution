@@ -7,6 +7,7 @@ namespace gameManager.src.Children
     {
         private readonly GameManagerIpcServer _ipcServer;
         private readonly Dictionary<int, Process> _processes = new();
+        private Process process = null;
 
         public ChildProcessManager(GameManagerIpcServer ipcServer)
         {
@@ -22,7 +23,6 @@ namespace gameManager.src.Children
                 throw new FileNotFoundException($"Child executable was not found: {configuration.Path}");
 
             Console.WriteLine($"Starting child '{configuration.Name}'...");
-
             string arguments = configuration.Arguments.Replace("{DolphinPID}", dolphinProcess.Id.ToString());
 
             Console.WriteLine($"Arguments: {arguments}");
@@ -35,7 +35,21 @@ namespace gameManager.src.Children
                 CreateNoWindow = true
             };
 
-            Process process = Process.Start(startInfo) ?? throw new InvalidOperationException($"Failed to start child '{configuration.Name}'.");
+            try
+            {
+                process = Process.Start(startInfo);
+            }
+            catch
+            {
+                if (configuration.Required)
+                    throw new InvalidOperationException($"Failed to start a required child '{configuration.Name}'.");
+                else
+                {
+                    Console.WriteLine($"None required child failed to start '{configuration.Name}', skipping the child.");
+                    return;
+                }
+            }
+            
 
             Console.WriteLine($"Child '{configuration.Name}' started with PID {process.Id}.");
 
@@ -46,15 +60,8 @@ namespace gameManager.src.Children
             }
 
             int clientId = await _ipcServer.WaitForClientAsync(cancellationToken);
-
             _processes[clientId] = process;
-
             Console.WriteLine($"Child '{configuration.Name}' registered as IPC client {clientId}.");
-        }
-
-        public bool TryGetProcess(int clientId, out Process? process)
-        {
-            return _processes.TryGetValue(clientId, out process);
         }
     }
 }
