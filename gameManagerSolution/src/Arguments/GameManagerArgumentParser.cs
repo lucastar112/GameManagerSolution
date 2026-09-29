@@ -15,17 +15,19 @@
         /// </summary>
         public static GameManagerArguments Parse(string[] args)
         {
-            if (args.Length != 4) 
-                throw new ArgumentException("Usage: GameManager.exe " + "<GAME_ID> <CONFIG> <DOLPHIN_PATH> <GAME_PATH>");
+            if (args.Length != 3) 
+                throw new ArgumentException("Usage: GameManager.exe " + "<GAME_ID> <DOLPHIN_PATH> <GAME_PATH>");
             
             string gameId = args[0].ToUpperInvariant();
-            string configuration = args[1].ToUpperInvariant();
             string dolphinPath = Path.GetFullPath(args[2]);
             string gamePath = Path.GetFullPath(args[3]);
 
-            if (configuration is not ("DEV" or "REL"))
-                throw new ArgumentException($"Unknown configuration '{configuration}'. " + "Expected DEV or REL.");
-            
+            #if DEBUG
+                string configuration = "DEV";
+            #else
+                string configuration = "REL";
+            #endif
+
             if (!File.Exists(dolphinPath))
                 throw new FileNotFoundException("Dolphin executable was not found.", dolphinPath);
             
