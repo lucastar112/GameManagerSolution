@@ -4,8 +4,10 @@ using DebugManager.Models;
 
 public static class VehicleDatabase
 {
-    public static readonly IReadOnlyDictionary<byte, VehicleDefinition> All =
-        new Dictionary<byte, VehicleDefinition>
+    /// <summary>
+    /// Define every vehicle ingame
+    /// </summary>
+    public static readonly IReadOnlyDictionary<byte, VehicleDefinition> All = new Dictionary<byte, VehicleDefinition>
         {
             [0x00] = new(0x00, "Standard Kart S", "StandardKartS.png"),
             [0x01] = new(0x01, "Standard Kart M", "StandardKartM.png"),

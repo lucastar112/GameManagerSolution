@@ -4,8 +4,10 @@ using DebugManager.Models;
 
 public static class ModCharacterDatabase
 {
-    public static readonly IReadOnlyDictionary<byte, CharacterDefinition> All =
-        new Dictionary<byte, CharacterDefinition>
+    /// <summary>
+    /// Define every modded characters ingame
+    /// </summary>
+    public static readonly IReadOnlyDictionary<byte, CharacterDefinition> All = new Dictionary<byte, CharacterDefinition>
         {
             [0x00] = new(0x00, "mr", "Mario", "MrM.png"),
             [0x01] = new(0x01, "bpc", "Starlet Negronia", "Starlet.png"),
