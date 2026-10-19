@@ -2,7 +2,7 @@
   <Project Path="../../TestConsoleClient/TestConsoleClient/TestConsoleClient.csproj">
     <Build Solution="Release|*" Project="false" />
   </Project>
-  <Project Path="../GameManager.Dolphin/GameManager.Dolphin/GameManager.Dolphin.csproj" />
-  <Project Path="../GameManager.Shared/GameManager.Shared/GameManager.Shared.csproj" />
-  <Project Path="gameManagerSolution/gameManager.csproj" />
+  <Project Path="libraries/GameManager.Dolphin/GameManager.Dolphin/GameManager.Dolphin.csproj" />
+  <Project Path="libraries/GameManager.Shared/GameManager.Shared/GameManager.Shared.csproj" />
+  <Project Path="GameManagerSolution/GameManagerSolution.csproj" />
 </Solution>
