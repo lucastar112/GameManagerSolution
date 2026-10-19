@@ -17,10 +17,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Reloaded.Memory" Version="1.4.1" />
-  </ItemGroup>
-
-  <ItemGroup>
     <ProjectReference Include="..\..\..\GameManager.Shared\GameManager.Shared\GameManager.Shared.csproj" />
     <ProjectReference Include="..\GameManager.Dolphin\GameManager.Dolphin.csproj" />
   </ItemGroup>
