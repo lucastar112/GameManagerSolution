@@ -96,6 +96,20 @@ Detailed explanations, API usage examples, and IPC examples will be provided onc
 |---|---|---|---|
 | `GameManager.Dolphin` | `Dolphin.Memory.Access` | `1.0.3` | `Tiny barebones library used to access the memory of Dolphin emulator on Windows.` |
 
+## Related Repositories
+
+GameManager is part of a modular ecosystem. Its reusable libraries and mod-specific example applications are maintained in separate repositories.
+
+| Repository | Purpose |
+|---|---|
+| [GameManager.Shared](REPLACE_WITH_SHARED_REPOSITORY_URL) | Shared interfaces and IPC communication components. |
+| [GameManager.Dolphin](REPLACE_WITH_DOLPHIN_REPOSITORY_URL) | Reusable Dolphin Emulator integration and memory access functionality. |
+| [MTW](REPLACE_WITH_MTW_REPOSITORY_URL) | Mod-specific applications, including MTW, DebugManager, and future child tools. This repository also serves as an example integration. |
+
+The shared libraries are intended to be reusable independently of the MTW mod. The MTW repository demonstrates how the framework can be extended with game-specific functionality.
+
+The related repositories can be included in a complete development checkout through Git submodules. See the development documentation for setup instructions once they are available.
+
 ## Development Status
 
 GameManager is currently under development. Its architecture and interfaces may evolve as memory resources, IPC communication, and child-process management are refined.
