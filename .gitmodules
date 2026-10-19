@@ -1,0 +1,9 @@
+[submodule "libraries/GameManager.Shared"]
+	path = libraries/GameManager.Shared
+	url = https://github.com/lucastar112/GameManager.Shared.git
+[submodule "libraries/GameManager.Dolphin"]
+	path = libraries/GameManager.Dolphin
+	url = https://github.com/lucastar112/GameManager.Dolphin.git
+[submodule "examples/Mario_Kart_WII_Team_Warfare"]
+	path = examples/Mario_Kart_WII_Team_Warfare
+	url = https://github.com/lucastar112/Mario_Kart_WII_Team_Warfare.git
