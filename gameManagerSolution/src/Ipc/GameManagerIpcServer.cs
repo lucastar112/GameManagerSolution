@@ -5,6 +5,7 @@ using System.IO.Pipes;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Diagnostics;
 
 namespace gameManager.src.Ipc
 {
@@ -600,6 +601,7 @@ namespace gameManager.src.Ipc
         /// <returns></returns>
         private IpcResponse HandleRegister(IpcRequest request, int clientId)
         {
+            // Check for common errors
             if (request.Value is null)
             {
                 return CreateErrorResponse(request, IpcErrorCodes.InvalidValue, "Registration data is missing.");
@@ -610,6 +612,13 @@ namespace gameManager.src.Ipc
             if (string.IsNullOrWhiteSpace(name))
             {
                 return CreateErrorResponse(request, IpcErrorCodes.InvalidValue, "A valid child name is required.");
+            }
+
+            // Checks if client name already exists
+            foreach (KeyValuePair<int, string> client in _clientNames)
+            {
+                if (client.Value.Equals(name, StringComparison.CurrentCultureIgnoreCase))
+                    return CreateErrorResponse(request, IpcErrorCodes.InvalidRequest, "A child with that reference already exists.");
             }
 
             _clientNames[clientId] = name;
@@ -624,5 +633,55 @@ namespace gameManager.src.Ipc
                 Value = name
             };
         }
+
+
+        /// <summary>
+        /// Waits for a specific child to register through IPC.
+        /// Fails if the process exits or the registration timeout expires.
+        /// </summary>
+        public async Task<int> WaitForClientAsync(
+            string expectedName,
+            Process childProcess,
+            TimeSpan timeout,
+            CancellationToken cancellationToken = default)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(expectedName);
+            ArgumentNullException.ThrowIfNull(childProcess);
+
+            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+
+            while (stopwatch.Elapsed < timeout)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                if (childProcess.HasExited)
+                {
+                    throw new InvalidOperationException(
+                        $"Child '{expectedName}' exited before registering with GameManager. " +
+                        $"Exit code: {childProcess.ExitCode}.");
+                }
+
+                foreach (int clientId in GetConnectedClientIds())
+                {
+                    if (TryGetClientName(clientId, out string? clientName) &&
+                        string.Equals(
+                            clientName,
+                            expectedName,
+                            StringComparison.OrdinalIgnoreCase))
+                    {
+                        return clientId;
+                    }
+                }
+
+                await Task.Delay(
+                    TimeSpan.FromMilliseconds(50),
+                    cancellationToken);
+            }
+
+            throw new TimeoutException(
+                $"Child '{expectedName}' did not register with GameManager " +
+                $"within {timeout.TotalSeconds:0.#} seconds.");
+        }
+
     }
 }
