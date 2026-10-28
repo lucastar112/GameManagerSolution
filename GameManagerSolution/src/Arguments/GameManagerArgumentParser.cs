@@ -16,11 +16,11 @@
         public static GameManagerArguments Parse(string[] args)
         {
             if (args.Length != 3) 
-                throw new ArgumentException("Usage: GameManager.exe " + "<GAME_ID> <DOLPHIN_PATH> <GAME_PATH>");
+                throw new ArgumentException("Usage: GameManagerSolution.exe " + "<GAME_ID> <DOLPHIN_PATH> <GAME_PATH>");
             
             string gameId = args[0].ToUpperInvariant();
-            string dolphinPath = Path.GetFullPath(args[2]);
-            string gamePath = Path.GetFullPath(args[3]);
+            string dolphinPath = Path.GetFullPath(args[1]);
+            string gamePath = Path.GetFullPath(args[2]);
 
             #if DEBUG
                 string configuration = "DEV";

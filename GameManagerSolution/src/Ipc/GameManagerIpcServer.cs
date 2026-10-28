@@ -1,11 +1,12 @@
 ﻿using gameManager.src.Api;
+using gameManager.src.Memory;
 using GameManager.Shared.Ipc;
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.IO.Pipes;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using System.Diagnostics;
 
 namespace gameManager.src.Ipc
 {
@@ -19,6 +20,7 @@ namespace gameManager.src.Ipc
         private int _clientId;
         private long _nextRequestId;
         private readonly GameManagerApi _api;
+        private readonly DynamicResourceManager _dynamicResourceManager;
         private readonly SemaphoreSlim _clientConnectedSignal = new(0);
         //private readonly TaskCompletionSource<int> _clientConnection = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private readonly TaskCompletionSource<bool> _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -33,16 +35,17 @@ namespace gameManager.src.Ipc
         {
             return _clients.Keys.ToArray();
         }
-        
+
 
         private static readonly JsonSerializerOptions JsonOptions = new()
         {
-            Converters = {new JsonStringEnumConverter()}
+            Converters = { new JsonStringEnumConverter() }
         };
 
-        public GameManagerIpcServer(GameManagerApi api)
+        public GameManagerIpcServer(GameManagerApi api, DynamicResourceManager dynamicResourceManager)
         {
             _api = api;
+            _dynamicResourceManager = dynamicResourceManager;
         }
 
         /// <summary>
@@ -63,7 +66,7 @@ namespace gameManager.src.Ipc
                 try
                 {
                     await pipe.WaitForConnectionAsync(cancellationToken);
-                    int clientId =Interlocked.Increment(ref _clientId);
+                    int clientId = Interlocked.Increment(ref _clientId);
                     Console.WriteLine($"IPC client connected (ID {clientId}).");
                     _ = HandleClientSafelyAsync(pipe, clientId, cancellationToken);
                 }
@@ -173,6 +176,20 @@ namespace gameManager.src.Ipc
 
                         string? json = await reader.ReadLineAsync(cancellationToken);
 
+                        Console.WriteLine($"[SERVER RECEIVE] Client={clientId}, JSON={json}");
+
+                        if (json is null)
+                        {
+                            Console.WriteLine($"IPC client {clientId} closed the connection.");
+                            break;
+                        }
+
+                        if (string.IsNullOrWhiteSpace(json))
+                            continue;
+
+                        // Temporary diagnostic
+                        Console.WriteLine($"[IPC DEBUG] Client {clientId} sent: {json}");
+
                         if (json is null)
                         {
                             Console.WriteLine($"IPC client {clientId} closed the connection.");
@@ -243,6 +260,12 @@ namespace gameManager.src.Ipc
                             request = JsonSerializer.Deserialize<IpcRequest>(
                                 json,
                                 JsonOptions);
+
+                            Console.WriteLine(
+                                $"[IPC SERVER] Client={clientId}, " +
+                                $"RequestId={request.RequestId}, " +
+                                $"Operation={request.Operation}, " +
+                                $"Resource={request.Resource}");
                         }
                         catch (JsonException exception)
                         {
@@ -271,9 +294,16 @@ namespace gameManager.src.Ipc
                         if (request is null)
                             continue;
 
-                        IpcResponse ipcResponse = await HandleRequestAsync(request, clientId, cancellationToken);
-
-                        await client.WriteAsync(JsonSerializer.Serialize(ipcResponse, JsonOptions), cancellationToken);
+                        // Do not await request processing in the pipe read loop.
+                        // The server must keep reading so it can receive ChildRequest
+                        // responses (for example, GetStatus heartbeats) while an API
+                        // request is still being processed. Normal requests are still
+                        // serialized per client by RequestLock.
+                        _ = HandleRequestAndRespondSafelyAsync(
+                            client,
+                            request,
+                            clientId,
+                            cancellationToken);
                     }
                 }
                 catch (OperationCanceledException)
@@ -325,9 +355,47 @@ namespace gameManager.src.Ipc
 
             if (client.PendingRequests.TryRemove(response.RequestId, out TaskCompletionSource<IpcResponse>? source))
                 source.TrySetResult(response);
-            
+
             else
                 Console.WriteLine($"IPC client {client.ClientId}: " + $"unknown response ID {response.RequestId}.");
+        }
+
+        private async Task HandleRequestAndRespondSafelyAsync(
+            ClientConnection client,
+            IpcRequest request,
+            int clientId,
+            CancellationToken cancellationToken)
+        {
+            bool lockAcquired = false;
+            try
+            {
+                await client.RequestLock.WaitAsync(cancellationToken);
+                lockAcquired = true;
+
+                IpcResponse response = await HandleRequestAsync(
+                    request,
+                    clientId,
+                    cancellationToken);
+
+                await client.WriteAsync(
+                    JsonSerializer.Serialize(response, JsonOptions),
+                    cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                // Normal shutdown.
+            }
+            catch (Exception exception)
+            {
+                Console.WriteLine(
+                    $"IPC request {request.RequestId} for client {clientId} failed while responding:");
+                Console.WriteLine(exception);
+            }
+            finally
+            {
+                if (lockAcquired)
+                    client.RequestLock.Release();
+            }
         }
 
         /// <summary>
@@ -430,6 +498,7 @@ namespace gameManager.src.Ipc
                     IpcOperation.SetResource => await HandleSetAsync(request, cancellationToken),
                     IpcOperation.Ping => HandlePing(request),
                     IpcOperation.Register => HandleRegister(request, clientId),
+                    IpcOperation.ReloadDynamicCache => HandleReloadDynamicCache(request),
                     _ => CreateErrorResponse(request, IpcErrorCodes.UnknownOperation, $"Unknown operation '{request.Operation}'.")
                 };
             }
@@ -445,12 +514,32 @@ namespace gameManager.src.Ipc
             {
                 return CreateErrorResponse(request, IpcErrorCodes.InvalidRequest, exception.Message);
             }
+
             catch (Exception exception)
             {
                 Console.WriteLine($"IPC request {request.RequestId} failed:");
                 Console.WriteLine(exception);
                 return CreateErrorResponse(request, IpcErrorCodes.InternalError, "An internal GameManager error occurred.");
             }
+        }
+
+        private IpcResponse HandleReloadDynamicCache(IpcRequest request)
+        {
+            Console.WriteLine(
+                "[IPC] Received dynamic cache reload request.");
+
+            _dynamicResourceManager.Reload();
+
+            Console.WriteLine(
+                "[IPC] Dynamic cache reloaded successfully.");
+
+            return new IpcResponse
+            {
+                MessageType = IpcMessageType.Response,
+                RequestId = request.RequestId,
+                Success = true,
+                Value = "Dynamic cache reloaded successfully."
+            };
         }
 
         /// <summary>
@@ -496,6 +585,7 @@ namespace gameManager.src.Ipc
         private sealed class ClientConnection
         {
             private readonly SemaphoreSlim _writeLock = new(1, 1);
+            public SemaphoreSlim RequestLock { get; } = new(1, 1);
             private readonly StreamWriter _writer;
             public int ClientId { get; }
 
