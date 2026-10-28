@@ -1,4 +1,4 @@
-﻿using gameManager.src.Api;
+using gameManager.src.Api;
 using gameManager.src.Arguments;
 using gameManager.src.Dolphin;
 using gameManager.src.Ipc;
@@ -33,7 +33,7 @@ namespace gameManager.src
             _gameStateManager = new GameStateManager(_dolphin);
             _availabilityManager = new ResourceAvailabilityManager(_gameStateManager);
             _api = new GameManagerApi(_dolphin, resources, dynamicResources, _availabilityManager);
-            _ipcServer = new GameManagerIpcServer(_api);
+            _ipcServer = new GameManagerIpcServer(_api, dynamicResources);
             _childProcessManager = new ChildProcessManager(_ipcServer);
             _childConfiguration = childConfiguration;
         }
@@ -43,18 +43,35 @@ namespace gameManager.src
         /// </summary>
         public void Run()
         {
-            Console.WriteLine("GameManager started.");
+            try
+            {
+                Console.WriteLine("GameManager started.");
 
-            Task ipcServerTask = _ipcServer.RunAsync();
-            _ipcServer.WaitUntilReadyAsync().GetAwaiter().GetResult();
+                Task ipcServerTask = _ipcServer.RunAsync();
+                _ipcServer.WaitUntilReadyAsync().GetAwaiter().GetResult();
 
-            Console.WriteLine("IPC server is ready.");
+                Console.WriteLine("IPC server is ready.");
 
-            WaitForGameInitialization();
-            StartChildrenAsync(CancellationToken.None).GetAwaiter().GetResult();
-            _ = RunChildStatusMonitorAsync(CancellationToken.None);
-            _ = RunGameHeartbeatAsync(CancellationToken.None);
-            RunGameLoop();
+                WaitForGameInitialization();
+
+                // DME-compatible discovery requires the game to have initialized
+                // its internal RAM structures.
+                if (!_dolphin.InitializeMemoryMap())
+                {
+                    Console.WriteLine(
+                        "[DolphinMemory] RAM-map discovery did not complete. " +
+                        "MEM1 reads may still use the fallback translator; MEM2 reads will fail until discovered.");
+                }
+
+                StartChildrenAsync(CancellationToken.None).GetAwaiter().GetResult();
+                _ = RunChildStatusMonitorAsync(CancellationToken.None);
+                _ = RunGameHeartbeatAsync(CancellationToken.None);
+                RunGameLoop();
+            }
+            finally
+            {
+                _dolphin.Dispose();
+            }
         }
 
         /// <summary>

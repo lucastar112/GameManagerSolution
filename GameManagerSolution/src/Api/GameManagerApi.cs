@@ -4,6 +4,7 @@ using GameManager.Shared.Ipc;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
+using System.Buffers.Binary;
 
 namespace gameManager.src.Api
 {
@@ -39,66 +40,58 @@ namespace gameManager.src.Api
         }
 
 
-        /// <summary>
-        /// Read the game's memory
-        /// </summary>
-        private T ReadResource<T>(MemoryResource resource, int? playerId)
-        {
-            if (resource.Length <= 0)
-                throw new InvalidOperationException($"Resource '{resource.Name}' has an invalid length.");
-
-            byte[] buffer = new byte[resource.Length];
-            int bytesRead;
-
-            if (resource.IsDynamic)
-                bytesRead = ReadDynamicResource(resource, playerId, buffer);
-            else if (resource.IsPointerChain)
-            {
-                if (!_dolphin.TryReadPointerChain(resource.Address, buffer, resource.Offsets, out bytesRead))
-                    throw new InvalidOperationException($"Failed to read resource '{resource.Name}'.");
-            }
-            else
-            {
-                if (!_dolphin.TryRead(resource.Address, buffer, out bytesRead))
-                    throw new InvalidOperationException($"Failed to read resource '{resource.Name}'.");
-            }
-
-            if (bytesRead != buffer.Length)
-            {
-                throw new InvalidOperationException($"Resource '{resource.Name}' returned {bytesRead} bytes, expected {buffer.Length}.");
-            }
-
-            // Raw byte data
-            if (typeof(T) == typeof(byte[]))
-                return (T)(object)buffer;
-
-            // ASCII string
-            if (typeof(T) == typeof(string))
-            {
-                string value = Encoding.ASCII.GetString(buffer);
-                return (T)(object)value;
-            }
-
-            throw new NotSupportedException($"Type '{typeof(T).Name}' is not supported yet.");
-        }
-
-
-        private int ReadDynamicResource(MemoryResource resource, int? playerId, byte[] buffer)
+        private int ReadDynamicResource(
+            MemoryResource resource,
+            int? playerId,
+            byte[] buffer)
         {
             if (playerId is null)
-                throw new GameManagerIpcException(IpcErrorCodes.InvalidRequest, $"Resource '{resource.Name}' requires a player ID.");
+            {
+                throw new GameManagerIpcException(
+                    IpcErrorCodes.InvalidRequest,
+                    $"Resource '{resource.Name}' requires a player ID.");
+            }
 
             if (string.IsNullOrWhiteSpace(resource.DynamicBase))
-                throw new InvalidOperationException($"Dynamic resource '{resource.Name}' does not define a dynamic base.");
+            {
+                throw new InvalidOperationException(
+                    $"Dynamic resource '{resource.Name}' does not define a dynamic base.");
+            }
 
-            if (!_dynamicResources.TryResolve(resource.DynamicBase, playerId.Value, out IntPtr baseAddress))
-                throw new GameManagerIpcException(IpcErrorCodes.ResourceUnavailable, $"Resource '{resource.Name}' is not available for player {playerId.Value}.");
+            if (!_dynamicResources.TryResolve(
+                resource.DynamicBase,
+                playerId.Value,
+                out IntPtr baseAddress))
+            {
+                throw new GameManagerIpcException(
+                    IpcErrorCodes.ResourceUnavailable,
+                    $"Resource '{resource.Name}' is not available for player {playerId.Value}.");
+            }
 
-            if (!_dolphin.TryReadPointerChainFromBase(baseAddress, buffer, resource.Offsets, out int bytesRead))
-                throw new InvalidOperationException($"Failed to read dynamic resource '{resource.Name}'.");
+            Console.WriteLine(
+                $"[MemoryDebug] {resource.Name}: " +
+                $"Base=0x{baseAddress.ToInt64():X8}, " +
+                $"Player={playerId.Value}, " +
+                $"Offsets={string.Join(", ", resource.Offsets.Select(o => $"0x{o:X}"))}");
+
+            if (!_dolphin.TryReadPointerChainFromBase(
+                baseAddress,
+                buffer,
+                resource.Offsets,
+                out int bytesRead))
+            {
+                throw new InvalidOperationException(
+                    $"Failed to read dynamic resource '{resource.Name}'.");
+            }
+
+            Console.WriteLine(
+                $"[MemoryDebug] {resource.Name}: " +
+                $"BytesRead={bytesRead}, " +
+                $"RawBytes={Convert.ToHexString(buffer)}");
 
             return bytesRead;
         }
+
 
         /// <summary>
         /// Set a value to the game's memory
@@ -108,8 +101,7 @@ namespace gameManager.src.Api
             cancellationToken.ThrowIfCancellationRequested();
 
             MemoryResource definition = _resources.Get(resource);
-            if (!_availabilityManager.IsAvailable(definition))
-                throw new GameManagerIpcException(IpcErrorCodes.ResourceUnavailable, $"Resource '{resource}' is currently unavailable.");
+            _availabilityManager.EnsureAvailable(definition);
 
             byte[] buffer = ConvertValue(value);
 
@@ -156,47 +148,112 @@ namespace gameManager.src.Api
 
             MemoryResource definition = _resources.Get(resource);
 
-            if (!_availabilityManager.IsAvailable(definition))
-            {
-                throw new GameManagerIpcException(
-                    IpcErrorCodes.ResourceUnavailable,
-                    $"Resource '{resource}' is currently unavailable."
-                );
-            }
+            _availabilityManager.EnsureAvailable(definition);
 
             return Task.FromResult(ReadResourceValue(definition, playerId));
         }
 
+
         private object ReadResourceValue(MemoryResource resource, int? playerId)
         {
             if (resource.Length <= 0)
-                throw new InvalidOperationException($"Resource '{resource.Name}' has an invalid length.");
+            {
+                throw new InvalidOperationException(
+                    $"Resource '{resource.Name}' has an invalid length.");
+            }
 
             byte[] buffer = new byte[resource.Length];
             int bytesRead;
 
             if (resource.IsDynamic)
+            {
                 bytesRead = ReadDynamicResource(resource, playerId, buffer);
+            }
             else if (resource.IsPointerChain)
             {
-                if (!_dolphin.TryReadPointerChain(resource.Address,  buffer, resource.Offsets, out bytesRead))
-                    throw new InvalidOperationException($"Failed to read resource '{resource.Name}'.");
+                if (!_dolphin.TryReadPointerChain(
+                        resource.Address,
+                        buffer,
+                        resource.Offsets,
+                        out bytesRead))
+                {
+                    throw new InvalidOperationException(
+                        $"Failed to read resource '{resource.Name}'.");
+                }
             }
             else
             {
                 if (!_dolphin.TryRead(resource.Address, buffer, out bytesRead))
-                    throw new InvalidOperationException($"Failed to read resource '{resource.Name}'.");
+                {
+                    throw new InvalidOperationException(
+                        $"Failed to read resource '{resource.Name}'.");
+                }
             }
 
             if (bytesRead != buffer.Length)
-                throw new InvalidOperationException($"Resource '{resource.Name}' returned {bytesRead} bytes, expected {buffer.Length}.");
-
-            return resource.Type switch
             {
-                "uint8" => buffer,
-                "string" => Encoding.ASCII.GetString(buffer),
-                _ => throw new NotSupportedException($"Resource type '{resource.Type}' is not supported yet.")
+                throw new InvalidOperationException(
+                    $"Resource '{resource.Name}' returned {bytesRead} bytes, " +
+                    $"expected {buffer.Length}.");
+            }
+
+            Console.WriteLine(
+                $"[MemoryDebug] Resource={resource.Name}, " +
+                $"Type={resource.Type}, " +
+                $"Length={buffer.Length}, " +
+                $"Bytes={Convert.ToHexString(buffer)}");
+
+
+            string type = resource.Type.ToLowerInvariant();
+
+            object value = type switch
+            {
+                // Unsigned integers
+                "uint8" when buffer.Length == 1 =>
+                    buffer[0],
+
+                "uint16" when buffer.Length == 2 =>
+                    BinaryPrimitives.ReadUInt16BigEndian(buffer),
+
+                "uint32" when buffer.Length == 4 =>
+                    BinaryPrimitives.ReadUInt32BigEndian(buffer),
+
+                // Signed integers
+                "int8" when buffer.Length == 1 =>
+                    unchecked((sbyte)buffer[0]),
+
+                "int16" when buffer.Length == 2 =>
+                    BinaryPrimitives.ReadInt16BigEndian(buffer),
+
+                "int32" when buffer.Length == 4 =>
+                    BinaryPrimitives.ReadInt32BigEndian(buffer),
+
+                // Floating-point values
+                "single" or "float" when buffer.Length == 4 =>
+                    BitConverter.Int32BitsToSingle(
+                        BinaryPrimitives.ReadInt32BigEndian(buffer)),
+
+                "double" when buffer.Length == 8 =>
+                    BitConverter.Int64BitsToDouble(
+                        BinaryPrimitives.ReadInt64BigEndian(buffer)),
+
+                // Strings and raw byte arrays
+                "string" =>
+                    Encoding.ASCII.GetString(buffer),
+
+                "bytes" =>
+                    buffer,
+
+                _ => throw new NotSupportedException(
+                    $"Resource '{resource.Name}' has unsupported type " +
+                    $"'{resource.Type}' or an invalid length of {buffer.Length}.")
             };
+
+            Console.WriteLine(
+                $"[MemoryDebug] Resource={resource.Name}, " +
+                $"DecodedValue={value}");
+
+            return value;
         }
     }
 }

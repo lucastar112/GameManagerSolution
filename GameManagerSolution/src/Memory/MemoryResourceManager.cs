@@ -64,6 +64,8 @@ namespace gameManager.src.Memory
                 if (!isDynamic && address == IntPtr.Zero)
                     throw new InvalidDataException($"Resource '{name}' does not contain an address.");
 
+
+
                 // ------------------------------------------------------------
                 // Type
                 // ------------------------------------------------------------
