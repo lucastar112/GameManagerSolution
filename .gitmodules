@@ -4,6 +4,6 @@
 [submodule "libraries/GameManager.Dolphin"]
 	path = libraries/GameManager.Dolphin
 	url = https://github.com/lucastar112/GameManager.Dolphin.git
-[submodule "examples/Mario_Kart_WII_Team_Warfare"]
+[submodule "gameImplementations/Mario_Kart_WII_Team_Warfare"]
 	path = gameImplementations/Mario_Kart_WII_Team_Warfare
 	url = https://github.com/lucastar112/Mario_Kart_WII_Team_Warfare.git
