@@ -1,4 +1,5 @@
-﻿using gameManager.src.Api;
+﻿using GameManager.Shared;
+using gameManager.src.Api;
 using gameManager.src.Memory;
 using GameManager.Shared.Ipc;
 using System.Collections.Concurrent;
@@ -176,7 +177,7 @@ namespace gameManager.src.Ipc
 
                         string? json = await reader.ReadLineAsync(cancellationToken);
 
-                        Console.WriteLine($"[SERVER RECEIVE] Client={clientId}, JSON={json}");
+                        IpcLog.Debug($"[SERVER RECEIVE] Client={clientId}, JSON={json}");
 
                         if (json is null)
                         {
@@ -188,7 +189,7 @@ namespace gameManager.src.Ipc
                             continue;
 
                         // Temporary diagnostic
-                        Console.WriteLine($"[IPC DEBUG] Client {clientId} sent: {json}");
+                        IpcLog.Debug($"[IPC DEBUG] Client {clientId} sent: {json}");
 
                         if (json is null)
                         {
@@ -620,20 +621,20 @@ namespace gameManager.src.Ipc
                     throw new InvalidOperationException("GameManager client is not connected.");
                 }
 
-                Console.WriteLine("[GameManagerClient] Waiting for write lock...");
+                IpcLog.Debug("[GameManagerClient] Waiting for write lock...");
                 await _writeLock.WaitAsync(cancellationToken);
-                Console.WriteLine("[GameManagerClient] Write lock acquired.");
+                IpcLog.Debug("[GameManagerClient] Write lock acquired.");
 
                 try
                 {
-                    Console.WriteLine($"[GameManagerClient] Sending: {message}");
+                    IpcLog.Debug($"[GameManagerClient] Sending: {message}");
                     await _writer.WriteLineAsync(message);
-                    Console.WriteLine("[GameManagerClient] Message sent.");
+                    IpcLog.Debug("[GameManagerClient] Message sent.");
                 }
                 finally
                 {
                     _writeLock.Release();
-                    Console.WriteLine("[GameManagerClient] Write lock released.");
+                    IpcLog.Debug("[GameManagerClient] Write lock released.");
                 }
             }
 
