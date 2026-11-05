@@ -1,4 +1,5 @@
-﻿using System.Globalization;
+﻿using GameManager.Shared;
+using System.Globalization;
 using System.Text.Json;
 
 namespace gameManager.src.Memory
@@ -65,7 +66,7 @@ namespace gameManager.src.Memory
         {
             address = IntPtr.Zero;
 
-            Console.WriteLine(
+            IpcLog.Debug(
                 $"Resolving dynamic base '{dynamicBase}' for player {playerId}.");
 
             string? addressString;
@@ -98,7 +99,7 @@ namespace gameManager.src.Memory
                 }
             }
 
-            Console.WriteLine(
+            IpcLog.Debug(
                 $"Dynamic base resolved: player {playerId} -> {addressString}");
 
             if (!TryParseAddress(addressString, out address))
@@ -108,7 +109,7 @@ namespace gameManager.src.Memory
                 return false;
             }
 
-            Console.WriteLine(
+            IpcLog.Debug(
                 $"Dynamic address parsed: 0x{address.ToInt64():X8}");
 
             return true;

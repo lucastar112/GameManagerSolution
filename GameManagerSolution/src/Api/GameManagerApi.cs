@@ -1,4 +1,5 @@
-﻿using GameManager.Dolphin;
+﻿using GameManager.Shared;
+using GameManager.Dolphin;
 using gameManager.src.Memory;
 using GameManager.Shared.Ipc;
 using System.Linq;
@@ -68,7 +69,7 @@ namespace gameManager.src.Api
                     $"Resource '{resource.Name}' is not available for player {playerId.Value}.");
             }
 
-            Console.WriteLine(
+            IpcLog.Debug(
                 $"[MemoryDebug] {resource.Name}: " +
                 $"Base=0x{baseAddress.ToInt64():X8}, " +
                 $"Player={playerId.Value}, " +
@@ -84,7 +85,7 @@ namespace gameManager.src.Api
                     $"Failed to read dynamic resource '{resource.Name}'.");
             }
 
-            Console.WriteLine(
+            IpcLog.Debug(
                 $"[MemoryDebug] {resource.Name}: " +
                 $"BytesRead={bytesRead}, " +
                 $"RawBytes={Convert.ToHexString(buffer)}");
@@ -197,7 +198,7 @@ namespace gameManager.src.Api
                     $"expected {buffer.Length}.");
             }
 
-            Console.WriteLine(
+            IpcLog.Debug(
                 $"[MemoryDebug] Resource={resource.Name}, " +
                 $"Type={resource.Type}, " +
                 $"Length={buffer.Length}, " +
@@ -249,7 +250,7 @@ namespace gameManager.src.Api
                     $"'{resource.Type}' or an invalid length of {buffer.Length}.")
             };
 
-            Console.WriteLine(
+            IpcLog.Debug(
                 $"[MemoryDebug] Resource={resource.Name}, " +
                 $"DecodedValue={value}");
 
