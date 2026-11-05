@@ -440,6 +440,53 @@ namespace gameManager.src.Ipc
         }
 
         /// <summary>
+        /// Handles batched "Get" requests: many resources, one round trip.
+        /// Each item succeeds or fails on its own.
+        /// </summary>
+        private async Task<IpcResponse> HandleGetManyAsync(IpcRequest request, CancellationToken cancellationToken)
+        {
+            List<IpcResourceRequest>? items = request.Value switch
+            {
+                JsonElement element => element.Deserialize<List<IpcResourceRequest>>(
+                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true }),
+                List<IpcResourceRequest> list => list,
+                _ => null
+            };
+
+            if (items is null)
+                return CreateErrorResponse(request, IpcErrorCodes.InvalidRequest, "GetResources requires a list of resource requests.");
+
+            List<IpcResourceResult> results = new(items.Count);
+
+            foreach (IpcResourceRequest item in items)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                try
+                {
+                    object? value = await _api.GetResourceAsync(item.Resource, item.PlayerId, cancellationToken);
+                    results.Add(new IpcResourceResult { Success = true, Value = value });
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception exception)
+                {
+                    results.Add(new IpcResourceResult { Success = false, Error = exception.Message });
+                }
+            }
+
+            return new IpcResponse
+            {
+                MessageType = IpcMessageType.Response,
+                RequestId = request.RequestId,
+                Success = true,
+                Value = results
+            };
+        }
+
+        /// <summary>
         /// Handles the "Set" requests from the clients
         /// </summary>
         /// <param name="request"></param>
@@ -491,11 +538,12 @@ namespace gameManager.src.Ipc
         {
             try
             {
-                Console.WriteLine($"Dispatching operation: {request.Operation}");
+                IpcLog.Debug($"Dispatching operation: {request.Operation}");
 
                 return request.Operation switch
                 {
                     IpcOperation.GetResource => await HandleGetAsync(request, cancellationToken),
+                    IpcOperation.GetResources => await HandleGetManyAsync(request, cancellationToken),
                     IpcOperation.SetResource => await HandleSetAsync(request, cancellationToken),
                     IpcOperation.Ping => HandlePing(request),
                     IpcOperation.Register => HandleRegister(request, clientId),
