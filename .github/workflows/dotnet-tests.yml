@@ -1,0 +1,50 @@
+name: .NET build and tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  cross-platform:
+    name: Cross-platform libraries and tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Restore tests
+        run: dotnet restore tests/GameManager.Shared.Tests/GameManager.Shared.Tests.csproj
+      - name: Test shared contracts
+        run: dotnet test tests/GameManager.Shared.Tests/GameManager.Shared.Tests.csproj --configuration Release --no-restore
+      - name: Test Dolphin platform contract
+        run: dotnet test tests/GameManager.Dolphin.Tests/GameManager.Dolphin.Tests.csproj --configuration Release
+      - name: Test GameManager
+        run: dotnet test tests/GameManager.Tests/GameManager.Tests.csproj --configuration Release
+      - name: Build cross-platform applications and libraries
+        run: |
+          dotnet build libraries/GameManager.Shared/GameManager.Shared/GameManager.Shared.csproj --configuration Release
+          dotnet build libraries/GameManager.Dolphin/GameManager.Dolphin/GameManager.Dolphin.csproj --configuration Release
+          dotnet build GameManagerSolution/GameManagerSolution.csproj --configuration Release
+          dotnet build gameImplementations/Mario_Kart_WII_Team_Warfare/Mario_Kart_WII_Team_Warfare/MTWManager/MTWManager.csproj --configuration Release
+      - name: Test MTWManager contracts
+        run: dotnet test tests/MTWManager.Tests/MTWManager.Tests.csproj --configuration Release
+
+  windows-wpf:
+    name: Windows-only WPF build
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Build DebugManager
+        run: dotnet build gameImplementations/Mario_Kart_WII_Team_Warfare/Mario_Kart_WII_Team_Warfare/DebugManager/DebugManager.csproj --configuration Release

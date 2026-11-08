@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "GameManagerSolution": {
+      "commandName": "Project",
+      "commandLineArgs": "MTW \"C:\\Users\\lucas\\Desktop\\Games\\Dolphin-x64\\Dolphin.exe\" \"E:\\mod\\mkwii\\Source_Code_(MKWII_CH_MD)\\MKWII_TW_DEV_Game_Builder\\FST\\MKWII_TW_DEV_EUR\\DATA\\sys\\main.dol\"\r\n"
+    }
+  }
+}
