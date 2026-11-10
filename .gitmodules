@@ -7,3 +7,6 @@
 [submodule "gameImplementations/Mario_Kart_WII_Team_Warfare"]
 	path = gameImplementations/Mario_Kart_WII_Team_Warfare
 	url = https://github.com/lucastar112/Mario_Kart_WII_Team_Warfare.git
+[submodule "libraries/GameManager.Tools"]
+	path = libraries/GameManager.Tools
+	url = https://github.com/lucastar112/GameManager.Tools.git
